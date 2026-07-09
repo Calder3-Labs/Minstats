@@ -7,6 +7,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusBar = StatusBarController()
+        if CommandLine.arguments.contains("--debug-popover") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [statusBar] in
+                statusBar?.togglePopover()
+            }
+        }
     }
 }
 
@@ -52,13 +57,31 @@ final class StatusBarController: NSObject {
         }
     }
 
-    private func togglePopover() {
+    func togglePopover() {
         guard let button = statusItem.button else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate()
+            constrainPopoverBelowMenuBar()
+        }
+    }
+
+    /// Keeps the panel's top edge inside the screen's visible frame so
+    /// the menu bar / notch never clips the headline.
+    private func constrainPopoverBelowMenuBar() {
+        guard let window = popover.contentViewController?.view.window,
+              let screen = window.screen ?? NSScreen.main else { return }
+        var frame = window.frame
+        let top = screen.visibleFrame.maxY
+        if frame.maxY > top {
+            frame.origin.y = top - frame.height
+            window.setFrame(frame, display: true)
+        }
+        if CommandLine.arguments.contains("--debug-popover") {
+            let line = "popover: \(window.frame) visible: \(screen.visibleFrame) screen: \(screen.frame)\n"
+            FileHandle.standardError.write(Data(line.utf8))
         }
     }
 
