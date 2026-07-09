@@ -10,6 +10,12 @@ struct DetailView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
                 .padding(.bottom, 12)
+            if !model.topProcesses.isEmpty {
+                Divider()
+                topProcesses
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+            }
             Divider()
             sensorList
             Divider()
@@ -64,6 +70,27 @@ struct DetailView: View {
                 }
             }
             .frame(height: 3)
+        }
+    }
+
+    private var topProcesses: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Top Processes")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ForEach(model.topProcesses) { process in
+                HStack {
+                    Text(process.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 12)
+                    Text("\(Int((process.cpuFraction * 100).rounded()))%")
+                        .font(.caption)
+                        .monospacedDigit()
+                }
+            }
         }
     }
 

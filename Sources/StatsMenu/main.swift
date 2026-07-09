@@ -14,12 +14,19 @@ if CommandLine.arguments.contains("--print") {
     }
 
     let cpuSampler = CPUSampler()
+    let processSampler = ProcessSampler()
     _ = cpuSampler.sample()
+    _ = processSampler.sample()
     Thread.sleep(forTimeInterval: 0.5)
     if let cpuUsage = cpuSampler.sample() {
         print(String(format: "CPU: %.1f%%", cpuUsage * 100))
     } else {
         print("CPU: unavailable")
+    }
+
+    print("Top processes:")
+    for process in processSampler.sample() {
+        print(String(format: "  %-32s %5.1f%%", (process.name as NSString).utf8String!, process.cpuFraction * 100))
     }
 
     let memorySampler = MemorySampler()
