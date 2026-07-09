@@ -18,6 +18,9 @@ struct DetailView: View {
                 .padding(.vertical, 8)
         }
         .frame(width: 280)
+        // Damp the popover's behind-window vibrancy: keeps the blur but
+        // stops busy backgrounds from bleeding through the content.
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.55))
     }
 
     private var headline: some View {
