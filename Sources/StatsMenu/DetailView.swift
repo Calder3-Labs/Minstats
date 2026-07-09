@@ -113,7 +113,7 @@ struct DetailView: View {
         // NSPopover sizes SwiftUI content to its ideal size, and a
         // ScrollView's ideal height is near zero — so derive an explicit
         // height from the row count instead of relying on maxHeight.
-        let rowCount = max(model.sensors.count, 1)
+        let rowCount = max(model.sensors.count + model.fans.count, 1)
         let contentHeight = CGFloat(rowCount) * 20 + 20
         return ScrollView {
             VStack(spacing: 7) {
@@ -135,6 +135,19 @@ struct DetailView: View {
                                 .font(.caption)
                                 .monospacedDigit()
                         }
+                    }
+                }
+                ForEach(Array(model.fans.enumerated()), id: \.offset) { _, fan in
+                    HStack {
+                        Text(fan.name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 12)
+                        Text("\(Int(fan.rpm)) rpm")
+                            .font(.caption)
+                            .monospacedDigit()
                     }
                 }
             }

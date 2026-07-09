@@ -12,6 +12,16 @@ if CommandLine.arguments.contains("--print") {
     for sensor in TemperatureSampler.displaySensors(from: sensors) {
         print(String(format: "  %-32s %6.1f°C", (sensor.name as NSString).utf8String!, sensor.celsius))
     }
+    let fanSampler = FanSampler()
+    let fans = fanSampler.sample()
+    if fans.isEmpty {
+        print("Fans: none")
+    } else {
+        print("Fans:")
+        for fan in fans {
+            print(String(format: "  %-32s %6.0f rpm", (fan.name as NSString).utf8String!, fan.rpm))
+        }
+    }
     if let headline = TemperatureSampler.headline(from: sensors) {
         print(String(format: "Headline: %.1f°C", headline))
     } else {

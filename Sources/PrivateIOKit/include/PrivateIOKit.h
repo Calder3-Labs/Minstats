@@ -1,5 +1,6 @@
 #pragma once
 #include <CoreFoundation/CoreFoundation.h>
+#include "SMC.h"
 
 /*
  * Private IOHIDFamily event-system API, used to read Apple Silicon

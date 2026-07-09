@@ -12,6 +12,7 @@ final class StatsModel {
     var cpuFraction: Double?
     var memory: MemoryStats?
     var sensors: [TemperatureSensor] = []
+    var fans: [FanReading] = []
     // Pools hold 5 entries; the display count slices them so toggling
     // 3/5 takes effect instantly without waiting for the next tick.
     private var cpuProcessPool: [ProcessEntry] = []
@@ -53,6 +54,7 @@ final class StatsModel {
     @ObservationIgnored private let cpuSampler = CPUSampler()
     @ObservationIgnored private let memorySampler = MemorySampler()
     @ObservationIgnored private let processSampler = ProcessSampler()
+    @ObservationIgnored private let fanSampler = FanSampler()
     @ObservationIgnored private var loop: Task<Void, Never>?
 
     init() {
@@ -73,6 +75,7 @@ final class StatsModel {
         let raw = temperatureSampler.sample()
         headlineTemp = TemperatureSampler.headline(from: raw)
         sensors = TemperatureSampler.displaySensors(from: raw)
+        fans = fanSampler.sample()
         cpuFraction = cpuSampler.sample()
         memory = memorySampler.sample()
         (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 5)
