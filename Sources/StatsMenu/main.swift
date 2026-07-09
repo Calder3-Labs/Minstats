@@ -24,9 +24,14 @@ if CommandLine.arguments.contains("--print") {
         print("CPU: unavailable")
     }
 
-    print("Top processes:")
-    for process in processSampler.sample() {
-        print(String(format: "  %-32s %5.1f%%", (process.name as NSString).utf8String!, process.cpuFraction * 100))
+    let (topCPU, topMemory) = processSampler.sample()
+    print("Top processes by CPU:")
+    for entry in topCPU {
+        print(String(format: "  %-32s %5.1f%%", (entry.name as NSString).utf8String!, entry.value * 100))
+    }
+    print("Top processes by memory:")
+    for entry in topMemory {
+        print(String(format: "  %-32s %7.0f MB", (entry.name as NSString).utf8String!, entry.value / 1_048_576))
     }
 
     let memorySampler = MemorySampler()

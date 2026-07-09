@@ -10,12 +10,6 @@ struct DetailView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
                 .padding(.bottom, 12)
-            if !model.topProcesses.isEmpty {
-                Divider()
-                topProcesses
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-            }
             Divider()
             sensorList
             Divider()
@@ -42,11 +36,13 @@ struct DetailView: View {
                 value: model.cpuFraction.map { "\(Int(($0 * 100).rounded()))%" } ?? "--",
                 fraction: model.cpuFraction
             )
+            processList(model.topCPUProcesses) { "\(Int(($0 * 100).rounded()))%" }
             metricRow(
                 label: "Memory",
                 value: model.memory.map { String(format: "%.1f / %.0f GB", $0.usedGB, $0.totalGB) } ?? "--",
                 fraction: model.memory.map { $0.totalGB > 0 ? $0.usedGB / $0.totalGB : 0 }
             )
+            processList(model.topMemoryProcesses, format: formatBytes)
         }
     }
 
@@ -73,25 +69,33 @@ struct DetailView: View {
         }
     }
 
-    private var topProcesses: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("Top Processes")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            ForEach(model.topProcesses) { process in
-                HStack {
-                    Text(process.name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 12)
-                    Text("\(Int((process.cpuFraction * 100).rounded()))%")
-                        .font(.caption)
-                        .monospacedDigit()
+    @ViewBuilder
+    private func processList(_ entries: [ProcessEntry], format: @escaping (Double) -> String) -> some View {
+        if !entries.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(entries) { entry in
+                    HStack {
+                        Text(entry.name)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 12)
+                        Text(format(entry.value))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
                 }
             }
+            .padding(.leading, 10)
+            .padding(.top, -6)
         }
+    }
+
+    private func formatBytes(_ bytes: Double) -> String {
+        bytes >= 1_073_741_824
+            ? String(format: "%.1f GB", bytes / 1_073_741_824)
+            : String(format: "%.0f MB", bytes / 1_048_576)
     }
 
     private var sensorList: some View {

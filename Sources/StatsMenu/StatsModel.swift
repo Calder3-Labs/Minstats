@@ -8,7 +8,8 @@ final class StatsModel {
     var cpuFraction: Double?
     var memory: MemoryStats?
     var sensors: [TemperatureSensor] = []
-    var topProcesses: [ProcessUsage] = []
+    var topCPUProcesses: [ProcessEntry] = []
+    var topMemoryProcesses: [ProcessEntry] = []
 
     var interval: Double = {
         let stored = UserDefaults.standard.double(forKey: "refreshInterval")
@@ -46,7 +47,7 @@ final class StatsModel {
         headlineTemp = TemperatureSampler.headline(from: sensors)
         cpuFraction = cpuSampler.sample()
         memory = memorySampler.sample()
-        topProcesses = processSampler.sample()
+        (topCPUProcesses, topMemoryProcesses) = processSampler.sample()
     }
 
     /// Fixed-width menu bar title so the item never jitters horizontally.

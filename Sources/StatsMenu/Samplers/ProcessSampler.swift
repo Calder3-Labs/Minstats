@@ -1,15 +1,18 @@
 import Darwin
 import Foundation
 
-struct ProcessUsage: Identifiable {
+struct ProcessEntry: Identifiable {
     let name: String
-    let cpuFraction: Double
+    /// CPU fraction of total machine capacity, or memory bytes,
+    /// depending on which ranking this entry came from.
+    let value: Double
     var id: String { name }
 }
 
-/// Ranks processes by CPU via libproc rusage deltas between ticks.
-/// Helper processes are grouped under their owning .app bundle, the way
-/// the system battery menu groups "Using Significant Energy" entries.
+/// Ranks processes by CPU (rusage deltas between ticks) and by memory
+/// (physical footprint, Activity Monitor's "Memory" column). Helper
+/// processes are grouped under their owning .app bundle, the way the
+/// system battery menu groups "Using Significant Energy" entries.
 final class ProcessSampler {
     private var previousCPUTime: [pid_t: UInt64] = [:]
     private var previousSampleTime: UInt64 = 0
@@ -20,17 +23,18 @@ final class ProcessSampler {
         return (Double(tb.numer), Double(tb.denom))
     }()
 
-    /// Returns the top `count` process groups by CPU, as a fraction of
-    /// total machine capacity (same scale as CPUSampler). Empty on the
-    /// first call — no delta baseline yet.
-    func sample(top count: Int = 3) -> [ProcessUsage] {
+    /// CPU ranking is empty on the first call (no delta baseline yet);
+    /// the memory ranking is available immediately.
+    func sample(top count: Int = 3) -> (cpu: [ProcessEntry], memory: [ProcessEntry]) {
         let now = mach_absolute_time()
         var pids = [pid_t](repeating: 0, count: 8192)
         let listed = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.stride))
-        guard listed > 0 else { return [] }
+        guard listed > 0 else { return ([], []) }
 
         var currentCPUTime: [pid_t: UInt64] = [:]
-        var groupFractions: [String: Double] = [:]
+        var cpuByGroup: [String: Double] = [:]
+        var memoryByGroup: [String: Double] = [:]
+        var nameCache: [pid_t: String] = [:]
         let wallNanos = (Double(now - previousSampleTime)) * timebase.numer / timebase.denom
         let hadBaseline = previousSampleTime > 0 && wallNanos > 0
 
@@ -42,22 +46,37 @@ final class ProcessSampler {
                 }
             }
             guard ok == 0 else { continue }
+
+            func cachedName() -> String? {
+                if let name = nameCache[pid] { return name }
+                guard let name = displayName(for: pid) else { return nil }
+                nameCache[pid] = name
+                return name
+            }
+
+            if info.ri_phys_footprint > 0, let name = cachedName() {
+                memoryByGroup[name, default: 0] += Double(info.ri_phys_footprint)
+            }
+
             let cpuNanos = UInt64((Double(info.ri_user_time + info.ri_system_time)) * timebase.numer / timebase.denom)
             currentCPUTime[pid] = cpuNanos
-
-            guard hadBaseline, let previous = previousCPUTime[pid], cpuNanos > previous else { continue }
-            let fraction = Double(cpuNanos - previous) / wallNanos / coreCount
-            guard fraction > 0.0005, let name = displayName(for: pid) else { continue }
-            groupFractions[name, default: 0] += fraction
+            if hadBaseline, let previous = previousCPUTime[pid], cpuNanos > previous {
+                let fraction = Double(cpuNanos - previous) / wallNanos / coreCount
+                if fraction > 0.0005, let name = cachedName() {
+                    cpuByGroup[name, default: 0] += fraction
+                }
+            }
         }
 
         previousCPUTime = currentCPUTime
         previousSampleTime = now
 
-        return groupFractions
-            .sorted { $0.value > $1.value }
-            .prefix(count)
-            .map { ProcessUsage(name: $0.key, cpuFraction: $0.value) }
+        func top3(_ groups: [String: Double]) -> [ProcessEntry] {
+            groups.sorted { $0.value > $1.value }
+                .prefix(count)
+                .map { ProcessEntry(name: $0.key, value: $0.value) }
+        }
+        return (top3(cpuByGroup), top3(memoryByGroup))
     }
 
     /// App bundle name when the executable lives inside one ("Claude"),
