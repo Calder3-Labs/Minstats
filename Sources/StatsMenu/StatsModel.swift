@@ -12,8 +12,19 @@ final class StatsModel {
     var cpuFraction: Double?
     var memory: MemoryStats?
     var sensors: [TemperatureSensor] = []
-    var topCPUProcesses: [ProcessEntry] = []
-    var topMemoryProcesses: [ProcessEntry] = []
+    // Pools hold 5 entries; the display count slices them so toggling
+    // 3/5 takes effect instantly without waiting for the next tick.
+    private var cpuProcessPool: [ProcessEntry] = []
+    private var memoryProcessPool: [ProcessEntry] = []
+    var topCPUProcesses: [ProcessEntry] { Array(cpuProcessPool.prefix(topProcessCount)) }
+    var topMemoryProcesses: [ProcessEntry] { Array(memoryProcessPool.prefix(topProcessCount)) }
+
+    var topProcessCount: Int = {
+        let stored = UserDefaults.standard.integer(forKey: "topProcessCount")
+        return stored == 5 ? 5 : 3
+    }() {
+        didSet { UserDefaults.standard.set(topProcessCount, forKey: "topProcessCount") }
+    }
 
     var useFahrenheit: Bool = UserDefaults.standard.bool(forKey: "useFahrenheit") {
         didSet { UserDefaults.standard.set(useFahrenheit, forKey: "useFahrenheit") }
@@ -64,7 +75,7 @@ final class StatsModel {
         sensors = TemperatureSampler.displaySensors(from: raw)
         cpuFraction = cpuSampler.sample()
         memory = memorySampler.sample()
-        (topCPUProcesses, topMemoryProcesses) = processSampler.sample()
+        (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 5)
     }
 
     /// Celsius converted to the display unit.

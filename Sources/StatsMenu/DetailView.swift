@@ -30,6 +30,14 @@ struct DetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Picker("Top process count", selection: $model.topProcessCount) {
+                    Text("3").tag(3)
+                    Text("5").tag(5)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.mini)
+                .frame(width: 52)
             }
             metricRow(
                 label: "CPU",
