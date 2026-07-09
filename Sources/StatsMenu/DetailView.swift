@@ -99,7 +99,12 @@ struct DetailView: View {
     }
 
     private var sensorList: some View {
-        ScrollView {
+        // NSPopover sizes SwiftUI content to its ideal size, and a
+        // ScrollView's ideal height is near zero — so derive an explicit
+        // height from the row count instead of relying on maxHeight.
+        let rowCount = max(model.sensors.count, 1)
+        let contentHeight = CGFloat(rowCount) * 20 + 20
+        return ScrollView {
             VStack(spacing: 7) {
                 if model.sensors.isEmpty {
                     Text("No sensors")
@@ -125,7 +130,7 @@ struct DetailView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
-        .frame(maxHeight: 260)
+        .frame(height: min(contentHeight, 260))
     }
 
     private var footer: some View {
