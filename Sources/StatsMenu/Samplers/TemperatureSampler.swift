@@ -53,15 +53,14 @@ final class TemperatureSampler {
         return sensors
     }
 
-    /// Friendly, grouped presentation of the raw readings: die sensors
-    /// become "CPU die N", the six battery cell sensors collapse into one
-    /// "Battery" row, NAND channels into "SSD". PMU calibration references
-    /// (tcal) are dropped — they're a fixed reference point, not a
-    /// temperature. Unrecognized names pass through raw, so future chips
-    /// still show their sensors.
+    /// Condenses the raw readings into four summary rows — CPU die,
+    /// power delivery, SSD, battery — each showing its group's hottest
+    /// sensor. PMU calibration references (tcal) are dropped: they're a
+    /// fixed reference point, not a temperature. Unrecognized names pass
+    /// through raw, so future chips still show their sensors.
     static func displaySensors(from sensors: [TemperatureSensor]) -> [TemperatureSensor] {
-        var cpuDies: [(index: Int, celsius: Double)] = []
-        var auxiliaries: [(index: Int, celsius: Double)] = []
+        var cpu: [Double] = []
+        var power: [Double] = []
         var ssd: [Double] = []
         var battery: [Double] = []
         var other: [TemperatureSensor] = []
@@ -71,10 +70,10 @@ final class TemperatureSampler {
                 battery.append(sensor.celsius)
             } else if sensor.name.hasPrefix("NAND CH") {
                 ssd.append(sensor.celsius)
-            } else if let (index, secondPMU) = parsePMUSensor(sensor.name, kind: "tdie") {
-                cpuDies.append((index + (secondPMU ? 8 : 0), sensor.celsius))
-            } else if let (index, secondPMU) = parsePMUSensor(sensor.name, kind: "tdev") {
-                auxiliaries.append((index + (secondPMU ? 8 : 0), sensor.celsius))
+            } else if isPMUSensor(sensor.name, kind: "tdie") {
+                cpu.append(sensor.celsius)
+            } else if isPMUSensor(sensor.name, kind: "tdev") {
+                power.append(sensor.celsius)
             } else if sensor.name.hasPrefix("PMU"), sensor.name.hasSuffix("tcal") {
                 continue
             } else {
@@ -82,27 +81,20 @@ final class TemperatureSampler {
             }
         }
 
-        var display = cpuDies.sorted { $0.index < $1.index }
-            .map { TemperatureSensor(name: "CPU die \($0.index)", celsius: $0.celsius) }
-        display += auxiliaries.sorted { $0.index < $1.index }
-            .map { TemperatureSensor(name: "Auxiliary \($0.index)", celsius: $0.celsius) }
-        if let hottest = ssd.max() {
-            display.append(TemperatureSensor(name: "SSD", celsius: hottest))
-        }
-        if let hottest = battery.max() {
-            display.append(TemperatureSensor(name: "Battery", celsius: hottest))
-        }
-        return display + other
+        let groups: [(String, [Double])] = [
+            ("CPU die", cpu), ("Power delivery", power), ("SSD", ssd), ("Battery", battery),
+        ]
+        return groups.compactMap { name, values in
+            values.max().map { TemperatureSensor(name: name, celsius: $0) }
+        } + other
     }
 
-    /// Parses "PMU tdie3" / "PMU2 tdev5" style names into (index, isPMU2).
-    private static func parsePMUSensor(_ name: String, kind: String) -> (Int, Bool)? {
+    /// Matches "PMU tdie3" / "PMU2 tdev5" style names.
+    private static func isPMUSensor(_ name: String, kind: String) -> Bool {
         let parts = name.split(separator: " ")
-        guard parts.count == 2,
-              parts[0] == "PMU" || parts[0] == "PMU2",
-              parts[1].hasPrefix(kind),
-              let index = Int(parts[1].dropFirst(kind.count)) else { return nil }
-        return (index, parts[0] == "PMU2")
+        return parts.count == 2
+            && (parts[0] == "PMU" || parts[0] == "PMU2")
+            && parts[1].hasPrefix(kind)
     }
 
     /// Headline number: hottest CPU/SoC die sensor, falling back to the
