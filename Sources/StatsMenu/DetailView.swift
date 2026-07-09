@@ -31,7 +31,7 @@ struct DetailView: View {
                     .monospacedDigit()
                 Text("die temperature")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
                 Spacer()
                 Picker("Top process count", selection: $model.topProcessCount) {
                     Text("3").tag(3)
