@@ -23,7 +23,7 @@ struct DetailView: View {
     private var headline: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(model.headlineTemp.map { "\(Int($0.rounded()))°" } ?? "--°")
+                Text(model.headlineTemp.map { "\(Int(model.displayDegrees($0).rounded()))°" } ?? "--°")
                     .font(.system(size: 34, weight: .light, design: .rounded))
                     .monospacedDigit()
                 Text("die temperature")
@@ -115,7 +115,7 @@ struct DetailView: View {
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer(minLength: 12)
-                            Text(String(format: "%.1f°", sensor.celsius))
+                            Text(String(format: "%.1f°", model.displayDegrees(sensor.celsius)))
                                 .font(.caption)
                                 .monospacedDigit()
                         }
@@ -138,7 +138,15 @@ struct DetailView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .controlSize(.small)
-            .frame(width: 130)
+            .frame(width: 110)
+            Picker("Unit", selection: $model.useFahrenheit) {
+                Text("°C").tag(false)
+                Text("°F").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .frame(width: 64)
             Spacer()
             Button("Quit") {
                 NSApplication.shared.terminate(nil)

@@ -1,6 +1,10 @@
 import Foundation
 import Observation
 
+enum MenuBarMode: String {
+    case compact, extended
+}
+
 @MainActor
 @Observable
 final class StatsModel {
@@ -10,6 +14,16 @@ final class StatsModel {
     var sensors: [TemperatureSensor] = []
     var topCPUProcesses: [ProcessEntry] = []
     var topMemoryProcesses: [ProcessEntry] = []
+
+    var useFahrenheit: Bool = UserDefaults.standard.bool(forKey: "useFahrenheit") {
+        didSet { UserDefaults.standard.set(useFahrenheit, forKey: "useFahrenheit") }
+    }
+
+    var menuBarMode: MenuBarMode = MenuBarMode(
+        rawValue: UserDefaults.standard.string(forKey: "menuBarMode") ?? ""
+    ) ?? .extended {
+        didSet { UserDefaults.standard.set(menuBarMode.rawValue, forKey: "menuBarMode") }
+    }
 
     var interval: Double = {
         let stored = UserDefaults.standard.double(forKey: "refreshInterval")
@@ -50,10 +64,16 @@ final class StatsModel {
         (topCPUProcesses, topMemoryProcesses) = processSampler.sample()
     }
 
+    /// Celsius converted to the display unit.
+    func displayDegrees(_ celsius: Double) -> Double {
+        useFahrenheit ? celsius * 9 / 5 + 32 : celsius
+    }
+
     /// Fixed-width menu bar title so the item never jitters horizontally.
-    /// Example: "58°  12%  9.2G"; before the first sample: " --°   --%    --G".
+    /// Extended: "58°  12%  9.2G"; compact: " 58°"; "--" before first sample.
     var menuTitle: String {
-        let temp = headlineTemp.map { String(Int($0.rounded())) } ?? "--"
+        let temp = headlineTemp.map { String(Int(displayDegrees($0).rounded())) } ?? "--"
+        guard menuBarMode == .extended else { return "\(pad(temp, to: 3))°" }
         let cpu = cpuFraction.map { String(Int(($0 * 100).rounded())) } ?? "--"
         let ram = memory.map { String(format: "%.1f", $0.usedGB) } ?? "--"
         return "\(pad(temp, to: 3))°  \(pad(cpu, to: 3))%  \(pad(ram, to: 4))G"

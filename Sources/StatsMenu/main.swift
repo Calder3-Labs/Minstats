@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 if CommandLine.arguments.contains("--print") {
@@ -44,4 +45,7 @@ if CommandLine.arguments.contains("--print") {
     exit(0)
 }
 
-StatsMenuApp.main()
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+app.run()

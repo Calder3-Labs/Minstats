@@ -84,7 +84,7 @@ final class ProcessSampler {
     private func displayName(for pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: 4096)
         guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
-        let path = String(cString: buffer)
+        let path = String(decoding: buffer.prefix(while: { $0 != 0 }).map(UInt8.init(bitPattern:)), as: UTF8.self)
         if let appComponent = path.split(separator: "/").first(where: { $0.hasSuffix(".app") }) {
             return String(appComponent.dropLast(4))
         }
