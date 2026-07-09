@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 @MainActor
@@ -94,12 +95,15 @@ final class StatusBarController: NSObject {
         extended.state = model.menuBarMode == .extended ? .on : .off
         let fahrenheit = NSMenuItem(title: "Use Fahrenheit", action: #selector(toggleFahrenheit), keyEquivalent: "")
         fahrenheit.state = model.useFahrenheit ? .on : .off
-        for item in [compact, extended, fahrenheit] { item.target = self }
+        let launchAtLogin = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        launchAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        for item in [compact, extended, fahrenheit, launchAtLogin] { item.target = self }
 
         menu.addItem(compact)
         menu.addItem(extended)
         menu.addItem(.separator())
         menu.addItem(fahrenheit)
+        menu.addItem(launchAtLogin)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit StatsMenu", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
@@ -113,4 +117,16 @@ final class StatusBarController: NSObject {
     @objc private func useCompactMode() { model.menuBarMode = .compact }
     @objc private func useExtendedMode() { model.menuBarMode = .extended }
     @objc private func toggleFahrenheit() { model.useFahrenheit.toggle() }
+
+    @objc private func toggleLaunchAtLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            NSLog("Launch at login toggle failed: \(error.localizedDescription)")
+        }
+    }
 }
