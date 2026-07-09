@@ -131,14 +131,14 @@ struct DetailView: View {
     private var footer: some View {
         HStack {
             Picker("Refresh interval", selection: $model.interval) {
-                Text("1s").tag(1.0)
-                Text("2s").tag(2.0)
-                Text("5s").tag(5.0)
+                ForEach(StatsModel.intervalOptions, id: \.self) { option in
+                    Text("\(Int(option))s").tag(option)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .controlSize(.small)
-            .frame(width: 110)
+            .frame(width: 128)
             Picker("Unit", selection: $model.useFahrenheit) {
                 Text("°C").tag(false)
                 Text("°F").tag(true)

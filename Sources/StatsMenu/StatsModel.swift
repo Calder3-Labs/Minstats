@@ -25,9 +25,11 @@ final class StatsModel {
         didSet { UserDefaults.standard.set(menuBarMode.rawValue, forKey: "menuBarMode") }
     }
 
+    static let intervalOptions: [Double] = [2, 5, 10, 30]
+
     var interval: Double = {
         let stored = UserDefaults.standard.double(forKey: "refreshInterval")
-        return stored > 0 ? stored : 2.0
+        return StatsModel.intervalOptions.contains(stored) ? stored : 5.0
     }() {
         didSet {
             guard interval != oldValue else { return }
@@ -57,8 +59,9 @@ final class StatsModel {
     }
 
     private func sampleOnce() {
-        sensors = temperatureSampler.sample()
-        headlineTemp = TemperatureSampler.headline(from: sensors)
+        let raw = temperatureSampler.sample()
+        headlineTemp = TemperatureSampler.headline(from: raw)
+        sensors = TemperatureSampler.displaySensors(from: raw)
         cpuFraction = cpuSampler.sample()
         memory = memorySampler.sample()
         (topCPUProcesses, topMemoryProcesses) = processSampler.sample()
