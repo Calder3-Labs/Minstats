@@ -3,11 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>com.calderone.StatsMenu</string>
+	<string>com.calderone.MinStats</string>
 	<key>CFBundleName</key>
-	<string>StatsMenu</string>
+	<string>MinStats</string>
 	<key>CFBundleExecutable</key>
-	<string>StatsMenu</string>
+	<string>MinStats</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

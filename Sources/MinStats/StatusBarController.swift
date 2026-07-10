@@ -165,7 +165,7 @@ final class StatusBarController: NSObject {
         menu.addItem(fahrenheit)
         menu.addItem(launchAtLogin)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit StatsMenu", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit MinStats", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         // With a menu attached, performClick pops it synchronously and
         // skips the button action; detach after so left click stays ours.

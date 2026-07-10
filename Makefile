@@ -1,4 +1,4 @@
-APP    := StatsMenu
+APP    := MinStats
 BUNDLE := dist/$(APP).app
 BIN    := .build/release/$(APP)
 
@@ -7,9 +7,10 @@ build:
 
 bundle: build
 	rm -rf $(BUNDLE)
-	mkdir -p $(BUNDLE)/Contents/MacOS
+	mkdir -p $(BUNDLE)/Contents/MacOS $(BUNDLE)/Contents/Resources
 	cp $(BIN) $(BUNDLE)/Contents/MacOS/$(APP)
 	cp Support/Info.plist $(BUNDLE)/Contents/Info.plist
+	cp Support/AppIcon.icns $(BUNDLE)/Contents/Resources/AppIcon.icns
 	codesign --force --sign - $(BUNDLE)
 
 run: bundle
@@ -19,6 +20,15 @@ run: bundle
 print:
 	swift run $(APP) --print
 
+# Render the app icon (steel hex nut) into an .iconset and pack it with
+# iconutil. No Xcode needed. AppIcon.icns is committed, so this only needs
+# re-running when the artwork in GenerateIcon.swift changes.
+icon:
+	rm -rf Support/AppIcon.iconset
+	swift Support/AppIcon/GenerateIcon.swift Support/AppIcon.iconset
+	iconutil -c icns Support/AppIcon.iconset -o Support/AppIcon.icns
+	rm -rf Support/AppIcon.iconset
+
 # Universal (arm64 + x86_64) build; SwiftPM's --arch needs full Xcode,
 # so build each slice via --triple and lipo them together.
 universal:
@@ -27,11 +37,12 @@ universal:
 
 dmg: universal
 	rm -rf $(BUNDLE) dist/dmg dist/$(APP).dmg
-	mkdir -p $(BUNDLE)/Contents/MacOS dist/dmg
+	mkdir -p $(BUNDLE)/Contents/MacOS $(BUNDLE)/Contents/Resources dist/dmg
 	lipo -create .build/arm64-apple-macosx/release/$(APP) \
 		.build/x86_64-apple-macosx/release/$(APP) \
 		-output $(BUNDLE)/Contents/MacOS/$(APP)
 	cp Support/Info.plist $(BUNDLE)/Contents/Info.plist
+	cp Support/AppIcon.icns $(BUNDLE)/Contents/Resources/AppIcon.icns
 	codesign --force --sign - $(BUNDLE)
 	cp -R $(BUNDLE) dist/dmg/
 	ln -s /Applications dist/dmg/Applications
@@ -41,4 +52,4 @@ dmg: universal
 clean:
 	rm -rf .build dist
 
-.PHONY: build bundle run print universal dmg clean
+.PHONY: build bundle run print icon universal dmg clean

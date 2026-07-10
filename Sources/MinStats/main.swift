@@ -71,6 +71,17 @@ if CommandLine.arguments.contains("--register-login") {
     }
 }
 
+if CommandLine.arguments.contains("--unregister-login") {
+    do {
+        try SMAppService.mainApp.unregister()
+        print("Launch at login disabled (status: \(SMAppService.mainApp.status.rawValue))")
+        exit(0)
+    } catch {
+        print("Failed to disable launch at login: \(error.localizedDescription)")
+        exit(1)
+    }
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

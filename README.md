@@ -1,12 +1,12 @@
-# StatsMenu
+# MinStats
 
 A minimalist macOS menu bar app for the vitals that matter: **temperature, CPU, and RAM** — at a glance, without the clutter.
 
 <p align="center">
-  <img src="docs/screenshots/panel.png" alt="StatsMenu panel" width="320">
+  <img src="docs/screenshots/panel.png" alt="MinStats panel" width="320">
 </p>
 
-Most system monitors try to show you everything. StatsMenu shows you the vital few, beautifully. One clean temperature reading in the menu bar; a quiet dropdown with the details when you want them. No graphs you'll never read, no configuration marathon.
+Most system monitors try to show you everything. MinStats shows you the vital few, beautifully. One clean temperature reading in the menu bar; a quiet dropdown with the details when you want them. No graphs you'll never read, no configuration marathon.
 
 ## Features
 
@@ -23,12 +23,12 @@ Most system monitors try to show you everything. StatsMenu shows you the vital f
 
 ### Download
 
-Grab the latest `StatsMenu.dmg` from [Releases](../../releases), open it, and drag StatsMenu to Applications.
+Grab the latest `MinStats.dmg` from [Releases](../../releases), open it, and drag MinStats to Applications.
 
 Because the app isn't yet signed with an Apple Developer ID, macOS Gatekeeper will ask on first launch. Either:
 
 - **Right-click** the app → **Open** → **Open**, or
-- run `xattr -d com.apple.quarantine /Applications/StatsMenu.app`
+- run `xattr -d com.apple.quarantine /Applications/MinStats.app`
 
 This is a one-time step per machine.
 

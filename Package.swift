@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "StatsMenu",
+    name: "MinStats",
     platforms: [.macOS(.v14)],
     targets: [
         .target(
@@ -10,7 +10,7 @@ let package = Package(
             linkerSettings: [.linkedFramework("IOKit")]
         ),
         .executableTarget(
-            name: "StatsMenu",
+            name: "MinStats",
             dependencies: ["PrivateIOKit"]
         ),
     ]
