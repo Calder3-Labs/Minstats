@@ -42,44 +42,68 @@ final class StatusBarController: NSObject {
     private func updateTitle() {
         withObservationTracking {
             guard let button = statusItem.button else { return }
-            button.attributedTitle = NSAttributedString(
-                string: model.menuTitle,
-                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)]
-            )
-            // Compact mode carries a tiny cold→hot bar under the number,
-            // echoing the panel; extended mode stays plain text.
-            if model.menuBarMode == .compact, let fraction = model.temperatureFraction {
-                button.image = Self.temperatureBarImage(fraction: fraction)
-                button.imagePosition = .imageBelow
-                button.imageHugsTitle = true
+            // Compact mode draws the number and a tiny cold→hot bar as one
+            // centered image (echoing the panel); extended stays plain text.
+            if model.menuBarMode == .compact {
+                button.attributedTitle = NSAttributedString(string: "")
+                button.image = Self.compactImage(
+                    text: model.compactTemperatureText,
+                    fraction: model.temperatureFraction
+                )
+                button.imagePosition = .imageOnly
             } else {
                 button.image = nil
+                button.imagePosition = .noImage
+                button.attributedTitle = NSAttributedString(
+                    string: model.menuTitle,
+                    attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)]
+                )
             }
         } onChange: { [weak self] in
             Task { @MainActor in self?.updateTitle() }
         }
     }
 
-    /// A 26×3 rounded bar: faint track with a fixed cold→hot gradient
-    /// revealed up to `fraction`. Semantic track color resolves against
-    /// the menu bar's appearance at draw time, so it adapts light/dark.
-    private static func temperatureBarImage(fraction: Double) -> NSImage {
-        let clamped = min(max(fraction, 0), 1)
-        let image = NSImage(size: NSSize(width: 26, height: 3), flipped: false) { rect in
-            let radius = rect.height / 2
+    /// Compact menu bar content: the number centered over a 26×3 cold→hot
+    /// gradient bar, composed as one image so both share a center. Text and
+    /// track use semantic colors resolved at draw time, so they adapt to
+    /// the menu bar's light/dark appearance.
+    private static func compactImage(text: String, fraction: Double?) -> NSImage {
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let textSize = (text as NSString).size(withAttributes: [.font: font])
+        let barWidth: CGFloat = 26
+        let barHeight: CGFloat = 3
+        let gap: CGFloat = 3
+        let width = ceil(max(textSize.width, barWidth))
+        let height: CGFloat = 22
+        let clamped = fraction.map { min(max($0, 0), 1) }
+
+        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            let groupHeight = textSize.height + gap + barHeight
+            let bottom = ((height - groupHeight) / 2).rounded()
+
+            let barRect = NSRect(x: (width - barWidth) / 2, y: bottom, width: barWidth, height: barHeight)
+            let radius = barHeight / 2
             NSColor.tertiaryLabelColor.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            let fillWidth = rect.width * clamped
-            guard fillWidth > 0.5 else { return true }
-            NSBezierPath(
-                roundedRect: NSRect(x: 0, y: 0, width: fillWidth, height: rect.height),
-                xRadius: radius, yRadius: radius
-            ).addClip()
-            NSGradient(colorsAndLocations:
-                (NSColor(red: 0.35, green: 0.62, blue: 0.92, alpha: 1), 0.0),
-                (NSColor(red: 0.98, green: 0.66, blue: 0.25, alpha: 1), 0.5),
-                (NSColor(red: 0.90, green: 0.30, blue: 0.28, alpha: 1), 1.0)
-            )?.draw(in: rect, angle: 0)
+            NSBezierPath(roundedRect: barRect, xRadius: radius, yRadius: radius).fill()
+            if let fraction = clamped, fraction > 0 {
+                NSGraphicsContext.saveGraphicsState()
+                NSBezierPath(
+                    roundedRect: NSRect(x: barRect.minX, y: barRect.minY, width: barRect.width * fraction, height: barHeight),
+                    xRadius: radius, yRadius: radius
+                ).addClip()
+                NSGradient(colorsAndLocations:
+                    (NSColor(red: 0.35, green: 0.62, blue: 0.92, alpha: 1), 0.0),
+                    (NSColor(red: 0.98, green: 0.66, blue: 0.25, alpha: 1), 0.5),
+                    (NSColor(red: 0.90, green: 0.30, blue: 0.28, alpha: 1), 1.0)
+                )?.draw(in: barRect, angle: 0)
+                NSGraphicsContext.restoreGraphicsState()
+            }
+
+            (text as NSString).draw(
+                at: NSPoint(x: (width - textSize.width) / 2, y: bottom + barHeight + gap),
+                withAttributes: [.font: font, .foregroundColor: NSColor.labelColor]
+            )
             return true
         }
         image.isTemplate = false

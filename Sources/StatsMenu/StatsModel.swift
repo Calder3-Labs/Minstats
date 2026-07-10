@@ -87,6 +87,11 @@ final class StatsModel {
         (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 5)
     }
 
+    /// Unpadded temperature for the compact menu bar image, e.g. "38°".
+    var compactTemperatureText: String {
+        headlineTemp.map { "\(Int(displayDegrees($0).rounded()))°" } ?? "--°"
+    }
+
     /// Where the current temperature sits on the cold→hot bar, 0...1.
     var temperatureFraction: Double? {
         headlineTemp.map {
