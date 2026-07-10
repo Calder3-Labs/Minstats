@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ServiceManagement
 
 if CommandLine.arguments.contains("--print") {
     let sampler = TemperatureSampler()
@@ -57,6 +58,17 @@ if CommandLine.arguments.contains("--print") {
     }
 
     exit(0)
+}
+
+if CommandLine.arguments.contains("--register-login") {
+    do {
+        try SMAppService.mainApp.register()
+        print("Launch at login enabled (status: \(SMAppService.mainApp.status.rawValue))")
+        exit(0)
+    } catch {
+        print("Failed to enable launch at login: \(error.localizedDescription)")
+        exit(1)
+    }
 }
 
 let app = NSApplication.shared
