@@ -25,23 +25,25 @@ struct DetailView: View {
 
     private var headline: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(model.headlineTemp.map { "\(Int(model.displayDegrees($0).rounded()))°" } ?? "--°")
-                    .font(.system(size: 34, weight: .light, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(headlineColor)
-                Text("die temperature")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                Spacer()
-                Picker("Top process count", selection: $model.topProcessCount) {
-                    Text("3").tag(3)
-                    Text("5").tag(5)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(model.headlineTemp.map { "\(Int(model.displayDegrees($0).rounded()))°" } ?? "--°")
+                        .font(.system(size: 34, weight: .light, design: .rounded))
+                        .monospacedDigit()
+                    Text("die temperature")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    Picker("Top process count", selection: $model.topProcessCount) {
+                        Text("3").tag(3)
+                        Text("5").tag(5)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.mini)
+                    .frame(width: 52)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.mini)
-                .frame(width: 52)
+                temperatureBar
             }
             metricRow(
                 label: "CPU",
@@ -58,12 +60,33 @@ struct DetailView: View {
         }
     }
 
-    private var headlineColor: Color {
-        switch model.thermalLevel {
-        case .normal: .primary
-        case .warm: .orange
-        case .hot: .red
+    /// Same 3pt capsule as the CPU/Memory bars, but the fill is a fixed
+    /// cold→hot gradient revealed up to where the current temperature
+    /// sits — so both the length and the leading-edge color read the heat.
+    private var temperatureBar: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Rectangle()
+                    .fill(temperatureGradient)
+                    .mask(alignment: .leading) {
+                        Capsule().frame(width: geo.size.width * (model.temperatureFraction ?? 0))
+                    }
+            }
         }
+        .frame(height: 3)
+    }
+
+    private var temperatureGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 0.35, green: 0.62, blue: 0.92),  // cold
+                Color(red: 0.98, green: 0.66, blue: 0.25),  // warm
+                Color(red: 0.90, green: 0.30, blue: 0.28),  // hot
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
     }
 
     private func metricRow(label: String, value: String, fraction: Double?) -> some View {

@@ -5,22 +5,10 @@ enum MenuBarMode: String {
     case compact, extended
 }
 
-/// Thermal state driving the color cue. Colour is meant to be rare —
-/// normal runs neutral, and a tint only appears when the machine is
-/// genuinely warm or hot.
-enum ThermalLevel {
-    case normal, warm, hot
-
-    static let warmThreshold = 85.0  // °C
-    static let hotThreshold = 98.0  // °C
-
-    init(celsius: Double) {
-        switch celsius {
-        case ..<ThermalLevel.warmThreshold: self = .normal
-        case ..<ThermalLevel.hotThreshold: self = .warm
-        default: self = .hot
-        }
-    }
+/// Fixed range mapping temperature onto the panel's cold→hot bar.
+enum Thermal {
+    static let coldPoint = 20.0  // °C — left (cold) end of the bar
+    static let hotPoint = 100.0  // °C — right (hot) end of the bar
 }
 
 @MainActor
@@ -99,8 +87,11 @@ final class StatsModel {
         (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 5)
     }
 
-    var thermalLevel: ThermalLevel {
-        headlineTemp.map(ThermalLevel.init) ?? .normal
+    /// Where the current temperature sits on the cold→hot bar, 0...1.
+    var temperatureFraction: Double? {
+        headlineTemp.map {
+            min(max(($0 - Thermal.coldPoint) / (Thermal.hotPoint - Thermal.coldPoint), 0), 1)
+        }
     }
 
     /// Celsius converted to the display unit.
