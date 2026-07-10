@@ -5,6 +5,24 @@ enum MenuBarMode: String {
     case compact, extended
 }
 
+/// Thermal state driving the color cue. Colour is meant to be rare —
+/// normal runs neutral, and a tint only appears when the machine is
+/// genuinely warm or hot.
+enum ThermalLevel {
+    case normal, warm, hot
+
+    static let warmThreshold = 85.0  // °C
+    static let hotThreshold = 98.0  // °C
+
+    init(celsius: Double) {
+        switch celsius {
+        case ..<ThermalLevel.warmThreshold: self = .normal
+        case ..<ThermalLevel.hotThreshold: self = .warm
+        default: self = .hot
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class StatsModel {
@@ -79,6 +97,10 @@ final class StatsModel {
         cpuFraction = cpuSampler.sample()
         memory = memorySampler.sample()
         (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 5)
+    }
+
+    var thermalLevel: ThermalLevel {
+        headlineTemp.map(ThermalLevel.init) ?? .normal
     }
 
     /// Celsius converted to the display unit.

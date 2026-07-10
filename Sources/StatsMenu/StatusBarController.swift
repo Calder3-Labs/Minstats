@@ -41,12 +41,26 @@ final class StatusBarController: NSObject {
     /// the next change to any @Observable property menuTitle reads.
     private func updateTitle() {
         withObservationTracking {
-            statusItem.button?.attributedTitle = NSAttributedString(
+            let title = NSMutableAttributedString(
                 string: model.menuTitle,
                 attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)]
             )
+            // Tint only the temperature token (digits + degree = first 4
+            // chars); leave CPU/RAM in the adaptive default color.
+            if let color = menuBarTintColor(for: model.thermalLevel), title.length >= 4 {
+                title.addAttribute(.foregroundColor, value: color, range: NSRange(location: 0, length: 4))
+            }
+            statusItem.button?.attributedTitle = title
         } onChange: { [weak self] in
             Task { @MainActor in self?.updateTitle() }
+        }
+    }
+
+    private func menuBarTintColor(for level: ThermalLevel) -> NSColor? {
+        switch level {
+        case .normal: nil
+        case .warm: .systemOrange
+        case .hot: .systemRed
         }
     }
 

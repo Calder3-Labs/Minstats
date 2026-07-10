@@ -29,6 +29,7 @@ struct DetailView: View {
                 Text(model.headlineTemp.map { "\(Int(model.displayDegrees($0).rounded()))°" } ?? "--°")
                     .font(.system(size: 34, weight: .light, design: .rounded))
                     .monospacedDigit()
+                    .foregroundStyle(headlineColor)
                 Text("die temperature")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -54,6 +55,14 @@ struct DetailView: View {
                 fraction: model.memory.map { $0.totalGB > 0 ? $0.usedGB / $0.totalGB : 0 }
             )
             processList(model.topMemoryProcesses, format: formatBytes)
+        }
+    }
+
+    private var headlineColor: Color {
+        switch model.thermalLevel {
+        case .normal: .primary
+        case .warm: .orange
+        case .hot: .red
         }
     }
 
