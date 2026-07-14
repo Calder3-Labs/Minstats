@@ -1,4 +1,5 @@
 import AppKit
+import MinStatsProtocol
 import ServiceManagement
 import SwiftUI
 
@@ -24,8 +25,13 @@ final class StatusBarController: NSObject {
     private let model = StatsModel()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
+    private let deviceID = AgentIdentity.deviceID()
+    private var auth: Auth
+    private var server: StatsServer?
+    private var pairingWindow: NSWindow?
 
     override init() {
+        auth = Auth(deviceID: deviceID, secret: AgentIdentity.secret())
         super.init()
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(rootView: DetailView(model: model))
@@ -35,6 +41,20 @@ final class StatusBarController: NSObject {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         updateTitle()
+        startAgent()
+    }
+
+    /// The agent runs whenever MinStats does — it serves the sample the menu
+    /// bar already took, so it costs no extra sampling. /stats needs a valid
+    /// signature, so listening is not the same as exposing anything.
+    private func startAgent() {
+        let server = StatsServer(auth: auth, deviceID: deviceID) { [model] in model.snapshot() }
+        do {
+            try server.start()
+            self.server = server
+        } catch {
+            NSLog("MinStats agent failed to start: \(error.localizedDescription)")
+        }
     }
 
     /// Re-arming observation: renders the title, then re-registers for
@@ -159,11 +179,16 @@ final class StatusBarController: NSObject {
         launchAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
         for item in [compact, extended, fahrenheit, launchAtLogin] { item.target = self }
 
+        let pair = NSMenuItem(title: "Pair iPhone…", action: #selector(showPairing), keyEquivalent: "")
+        pair.target = self
+
         menu.addItem(compact)
         menu.addItem(extended)
         menu.addItem(.separator())
         menu.addItem(fahrenheit)
         menu.addItem(launchAtLogin)
+        menu.addItem(.separator())
+        menu.addItem(pair)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit MinStats", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
@@ -172,6 +197,36 @@ final class StatusBarController: NSObject {
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    @objc private func showPairing() {
+        let host = (Host.current().localizedName ?? "Mac")
+            .replacingOccurrences(of: " ", with: "-") + ".local"
+        let view = PairingView(
+            pairingURL: auth.pairingURL(host: host, port: MinStatsProtocolVersion.defaultPort),
+            deviceName: Host.current().localizedName ?? "Mac",
+            onRotate: { [weak self] in self?.rotateSecret() }
+        )
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+        window.title = "Pair iPhone"
+        window.styleMask = NSWindow.StyleMask([.titled, .closable])
+        window.isReleasedWhenClosed = false
+        window.center()
+        pairingWindow = window
+        NSApp.activate()
+        window.makeKeyAndOrderFront(self)
+    }
+
+    /// New secret + restarted server, so already-paired phones stop working.
+    private func rotateSecret() {
+        AgentIdentity.rotateSecret()
+        auth = Auth(deviceID: deviceID, secret: AgentIdentity.secret())
+        server?.stop()
+        server = nil
+        startAgent()
+        pairingWindow?.close()
+        pairingWindow = nil
+        showPairing()
     }
 
     @objc private func useCompactMode() { model.menuBarMode = .compact }

@@ -101,11 +101,29 @@ final class Auth {
 // MARK: - Persistence
 
 /// Stable identity + secret for this Mac. The id is public (it's in the
-/// Bonjour TXT record); the secret never leaves the Keychain.
+/// Bonjour TXT record); the secret is owner-readable only.
+///
+/// The secret lives in a 0600 file rather than the Keychain, deliberately.
+/// The Keychain ACL is bound to code identity, and this app is ad-hoc signed
+/// — so every rebuild changes its identity and `SecItemCopyMatching` *blocks
+/// forever* waiting on an approval dialog a headless agent can never show
+/// (a hang, not an error). Beyond the practicality: this secret authorizes
+/// quitting apps and requesting a restart, which is strictly less than any
+/// process already running as this user can do — so file permissions are the
+/// honest boundary here, not a downgrade. Revisit once Developer ID signing
+/// lands and code identity is stable.
 enum AgentIdentity {
     private static let idKey = "agentDeviceID"
-    private static let keychainAccount = "agent-secret"
-    private static let keychainService = "com.calderone.MinStats"
+
+    private static var secretURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MinStats", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: base, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        return base.appendingPathComponent("agent-secret")
+    }
 
     static func deviceID() -> String {
         if let existing = UserDefaults.standard.string(forKey: idKey) { return existing }
@@ -116,16 +134,7 @@ enum AgentIdentity {
 
     /// Loads the paired secret, or nil if this Mac has never been paired.
     static func loadSecret() -> SymmetricKey? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-            kSecReturnData as String: true,
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data
-        else { return nil }
+        guard let data = try? Data(contentsOf: secretURL), data.count == 32 else { return nil }
         return SymmetricKey(data: data)
     }
 
@@ -135,16 +144,9 @@ enum AgentIdentity {
     static func rotateSecret() -> SymmetricKey {
         let key = SymmetricKey(size: .bits256)
         let data = key.withUnsafeBytes { Data($0) }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-        ]
-        SecItemDelete(query as CFDictionary)
-        var add = query
-        add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(add as CFDictionary, nil)
+        let url = secretURL
+        try? data.write(to: url, options: [.atomic])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         return key
     }
 

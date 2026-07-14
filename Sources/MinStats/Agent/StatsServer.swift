@@ -51,6 +51,20 @@ final class StatsServer {
         listener.newConnectionHandler = { [weak self] connection in
             Task { @MainActor in self?.accept(connection) }
         }
+        // Without this, a bind failure (port taken, local-network denied)
+        // is completely silent — the agent just never answers.
+        listener.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                NSLog("MinStats agent listening on \(MinStatsProtocolVersion.defaultPort)")
+            case let .failed(error):
+                NSLog("MinStats agent failed: \(error.localizedDescription)")
+            case let .waiting(error):
+                NSLog("MinStats agent waiting: \(error.localizedDescription)")
+            default:
+                break
+            }
+        }
         listener.start(queue: .main)
         self.listener = listener
     }
