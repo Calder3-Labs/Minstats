@@ -1,4 +1,5 @@
 import Foundation
+import MinStatsProtocol
 import Observation
 
 enum MenuBarMode: String {
@@ -85,6 +86,24 @@ final class StatsModel {
         cpuFraction = cpuSampler.sample()
         memory = memorySampler.sample()
         (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 5)
+    }
+
+    /// The current values as the agent's wire format. Reads the last sample
+    /// the menu bar already took — the server never triggers its own
+    /// sampling, so a polling client costs no extra IOKit work.
+    func snapshot() -> StatsDTO {
+        StatsDTO(
+            protocol: MinStatsProtocolVersion.current,
+            sampledAt: Date().timeIntervalSince1970,
+            interval: interval,
+            headlineC: headlineTemp,
+            cpu: cpuFraction,
+            memory: memory.map { MemoryDTO(usedGB: $0.usedGB, totalGB: $0.totalGB) },
+            sensors: sensors.map { SensorDTO(name: $0.name, c: $0.celsius) },
+            fans: fans.map { FanDTO(name: $0.name, rpm: $0.rpm) },
+            topCPU: cpuProcessPool.map { ProcessDTO(name: $0.name, value: $0.value, pids: $0.pids) },
+            topMemory: memoryProcessPool.map { ProcessDTO(name: $0.name, value: $0.value, pids: $0.pids) }
+        )
     }
 
     /// Unpadded temperature for the compact menu bar image, e.g. "38°".

@@ -6,6 +6,9 @@ struct ProcessEntry: Identifiable {
     /// CPU fraction of total machine capacity, or memory bytes,
     /// depending on which ranking this entry came from.
     let value: Double
+    /// Every pid folded into this group, so a client can quit the whole
+    /// app rather than a single helper.
+    let pids: [pid_t]
     var id: String { name }
 }
 
@@ -35,6 +38,10 @@ final class ProcessSampler {
         var cpuByGroup: [String: Double] = [:]
         var memoryByGroup: [String: Double] = [:]
         var nameCache: [pid_t: String] = [:]
+        // One map shared by both rankings: the CPU pass only sees pids above
+        // its 0.0005 threshold, so a per-ranking map would hand back a
+        // partial pid list and "quit this app" would strand its helpers.
+        var pidsByGroup: [String: [pid_t]] = [:]
         let wallNanos = (Double(now - previousSampleTime)) * timebase.numer / timebase.denom
         let hadBaseline = previousSampleTime > 0 && wallNanos > 0
 
@@ -51,6 +58,7 @@ final class ProcessSampler {
                 if let name = nameCache[pid] { return name }
                 guard let name = displayName(for: pid) else { return nil }
                 nameCache[pid] = name
+                pidsByGroup[name, default: []].append(pid)
                 return name
             }
 
@@ -74,7 +82,7 @@ final class ProcessSampler {
         func top3(_ groups: [String: Double]) -> [ProcessEntry] {
             groups.sorted { $0.value > $1.value }
                 .prefix(count)
-                .map { ProcessEntry(name: $0.key, value: $0.value) }
+                .map { ProcessEntry(name: $0.key, value: $0.value, pids: pidsByGroup[$0.key] ?? []) }
         }
         return (top3(cpuByGroup), top3(memoryByGroup))
     }

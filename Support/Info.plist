@@ -22,5 +22,11 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>MinStats serves this Mac's stats to your paired iPhone on your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_minstats._tcp</string>
+	</array>
 </dict>
 </plist>

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import MinStatsProtocol
 import ServiceManagement
 
 if CommandLine.arguments.contains("--print") {
@@ -80,6 +81,34 @@ if CommandLine.arguments.contains("--unregister-login") {
         print("Failed to disable launch at login: \(error.localizedDescription)")
         exit(1)
     }
+}
+
+// Headless agent: serves the API with no menu bar UI, so the whole wire
+// contract can be exercised with curl. Same spirit as --print.
+if CommandLine.arguments.contains("--serve") {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let model = StatsModel()
+    let secret = AgentIdentity.secret()
+    let deviceID = AgentIdentity.deviceID()
+    let auth = Auth(deviceID: deviceID, secret: secret)
+    let server = StatsServer(auth: auth, deviceID: deviceID) { model.snapshot() }
+    do {
+        try server.start()
+    } catch {
+        FileHandle.standardError.write(Data("Failed to start agent: \(error)\n".utf8))
+        exit(1)
+    }
+    let host = (Host.current().localizedName ?? "Mac")
+        .replacingOccurrences(of: " ", with: "-") + ".local"
+    let banner = """
+        MinStats agent on port \(MinStatsProtocolVersion.defaultPort)
+        device id: \(deviceID)
+        pairing:   \(auth.pairingURL(host: host, port: MinStatsProtocolVersion.defaultPort))
+
+        """
+    FileHandle.standardError.write(Data(banner.utf8))
+    app.run()
 }
 
 let app = NSApplication.shared
