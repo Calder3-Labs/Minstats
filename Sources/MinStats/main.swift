@@ -104,7 +104,7 @@ if CommandLine.arguments.contains("--serve") {
     let banner = """
         MinStats agent on port \(MinStatsProtocolVersion.defaultPort)
         device id: \(deviceID)
-        pairing:   \(auth.pairingURL(host: host, port: MinStatsProtocolVersion.defaultPort))
+        pairing:   \(auth.pairingURL(host: host, port: MinStatsProtocolVersion.defaultPort, name: Host.current().localizedName ?? "Mac"))
 
         """
     FileHandle.standardError.write(Data(banner.utf8))

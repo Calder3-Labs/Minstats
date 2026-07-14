@@ -37,13 +37,18 @@ final class Auth {
     }
 
     /// The pairing payload handed to the phone (QR / copyable string).
-    func pairingURL(host: String, port: UInt16) -> String {
+    ///
+    /// Carries the display name as well as the host: without it the phone can
+    /// only label the Mac by hostname ("192.168.1.4"), which is useless in a
+    /// list of several Macs.
+    func pairingURL(host: String, port: UInt16, name: String) -> String {
         let raw = secret.withUnsafeBytes { Data($0) }.base64EncodedString()
         var components = URLComponents()
         components.scheme = "minstats"
         components.host = "pair"
         components.queryItems = [
             .init(name: "id", value: deviceID),
+            .init(name: "name", value: name),
             .init(name: "host", value: host),
             .init(name: "port", value: String(port)),
             .init(name: "secret", value: raw),

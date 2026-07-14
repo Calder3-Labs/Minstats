@@ -203,7 +203,11 @@ final class StatusBarController: NSObject {
         let host = (Host.current().localizedName ?? "Mac")
             .replacingOccurrences(of: " ", with: "-") + ".local"
         let view = PairingView(
-            pairingURL: auth.pairingURL(host: host, port: MinStatsProtocolVersion.defaultPort),
+            pairingURL: auth.pairingURL(
+                host: host,
+                port: MinStatsProtocolVersion.defaultPort,
+                name: Host.current().localizedName ?? "Mac"
+            ),
             deviceName: Host.current().localizedName ?? "Mac",
             onRotate: { [weak self] in self?.rotateSecret() }
         )
