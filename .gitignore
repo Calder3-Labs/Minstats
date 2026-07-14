@@ -1,3 +1,6 @@
 .build/
 dist/
 .DS_Store
+ios/build/
+*.xcuserstate
+xcuserdata/
