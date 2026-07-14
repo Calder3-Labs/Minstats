@@ -136,7 +136,9 @@ final class StatsServer {
                 return .error("control is restricted to private networks", status: 403)
             }
             if let denial = authorize(request) { return denial }
-            return .error("not implemented", status: 404)  // Phase 2
+            return request.path == "/control/kill"
+                ? handleKill(request)
+                : handleRestart(request)
 
         case (_, "/health"), (_, "/stats"), (_, "/control/kill"), (_, "/control/restart"):
             return .error("method not allowed", status: 405)
@@ -144,6 +146,27 @@ final class StatsServer {
         default:
             return .error("not found", status: 404)
         }
+    }
+
+    private func handleKill(_ request: HTTP.Request) -> HTTP.Response {
+        guard let body = try? JSONDecoder().decode(KillRequestDTO.self, from: request.body) else {
+            return .error("malformed request", status: 400)
+        }
+        guard !body.pids.isEmpty else {
+            return .error("no pids given", status: 400)
+        }
+        let results = Control.kill(pids: body.pids, expectedName: body.name, mode: body.mode)
+        return .json(KillResponseDTO(results: results))
+    }
+
+    private func handleRestart(_ request: HTTP.Request) -> HTTP.Response {
+        guard let body = try? JSONDecoder().decode(RestartRequestDTO.self, from: request.body),
+              body.confirm
+        else {
+            return .error("restart requires confirm: true", status: 400)
+        }
+        Control.requestRestart()
+        return .json(RestartResponseDTO())
     }
 
     private func authorize(_ request: HTTP.Request) -> HTTP.Response? {

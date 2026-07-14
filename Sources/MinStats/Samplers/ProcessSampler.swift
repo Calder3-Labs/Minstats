@@ -87,9 +87,18 @@ final class ProcessSampler {
         return (top3(cpuByGroup), top3(memoryByGroup))
     }
 
+    private func displayName(for pid: pid_t) -> String? {
+        Self.displayName(for: pid)
+    }
+
     /// App bundle name when the executable lives inside one ("Claude"),
     /// otherwise the executable name ("WindowServer").
-    private func displayName(for pid: pid_t) -> String? {
+    ///
+    /// Static and shared with `Control`'s pid-reuse interlock on purpose: the
+    /// interlock compares a pid's *current* name against the name the client
+    /// saw, so both sides must derive names identically or valid kills would
+    /// be rejected (and, worse, the check could pass on the wrong process).
+    static func displayName(for pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: 4096)
         guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
         let path = String(decoding: buffer.prefix(while: { $0 != 0 }).map(UInt8.init(bitPattern:)), as: UTF8.self)
