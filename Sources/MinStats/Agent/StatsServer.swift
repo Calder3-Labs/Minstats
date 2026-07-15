@@ -241,12 +241,19 @@ final class StatsServer {
 enum SystemInfo {
     /// The user-visible computer name ("Example-Air").
     ///
-    /// NOT `Host.current().localizedName`: that's a networking API that
-    /// resolves the host, and on a network with slow reverse-DNS it blocks
-    /// for ~5s — per request, since it sits in the /health path. Measured at
-    /// 0.001s on one Mac and 5.04s on another purely because of their subnets.
-    /// SCDynamicStore reads the name straight from local config, no DNS, and
-    /// it's the API that actually means "what is this Mac called".
+    /// SCDynamicStore reads it straight from local config with no DNS, and is
+    /// the API that actually means "what is this Mac called" —
+    /// `Host.current().localizedName` is a networking API that resolves the
+    /// host, so it doesn't belong on a per-request path. Cached either way.
+    ///
+    /// Correcting the record: the commit that introduced this claimed it fixed
+    /// a 5s /health stall on the Mac mini. It did NOT. That stall was `curl`
+    /// trying an IPv4-mapped IPv6 address (`::ffff:10.187.64.140`) on a network
+    /// with no IPv6 route and eating its full 5s timeout before falling back to
+    /// IPv4. The agent always answered in ~0.02s, and URLSession — what the iOS
+    /// app uses — does Happy Eyeballs and measured 0.084s against the same host.
+    /// The bug was in the measuring tool. Kept because it's still the right API,
+    /// not because it fixed anything.
     static let computerName: String = {
         (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "Mac"
     }()
