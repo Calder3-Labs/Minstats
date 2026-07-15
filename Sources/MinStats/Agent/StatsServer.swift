@@ -266,5 +266,8 @@ enum SystemInfo {
         return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
     }()
 
-    static let agentVersion = "1.1.0"
+    /// Bump on any wire-visible or behavioural change. /health reports this so
+    /// you can tell which build a Mac is actually running — without it, "did
+    /// my update land?" is unanswerable from the network.
+    static let agentVersion = "1.2.0"
 }
