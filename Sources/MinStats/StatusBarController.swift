@@ -14,6 +14,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 statusBar?.togglePopover()
             }
         }
+        // The pairing sheet is only reachable from the right-click menu, which
+        // can't be driven from a script — so it needs its own way in to be
+        // verifiable at all.
+        if CommandLine.arguments.contains("--debug-pairing") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [statusBar] in
+                statusBar?.showPairing()
+            }
+        }
     }
 }
 
@@ -199,7 +207,7 @@ final class StatusBarController: NSObject {
         statusItem.menu = nil
     }
 
-    @objc private func showPairing() {
+    @objc func showPairing() {
         let host = (SystemInfo.computerName)
             .replacingOccurrences(of: " ", with: "-") + ".local"
         let view = PairingView(

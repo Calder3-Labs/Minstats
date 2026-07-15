@@ -21,6 +21,9 @@ struct PairingView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    // Without this, SwiftUI compresses the text to one line and
+                    // ellipsizes it rather than wrapping inside the fixed width.
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let qr = Self.qrImage(from: pairingURL) {
@@ -58,6 +61,7 @@ struct PairingView: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
         .frame(width: 260)
