@@ -99,12 +99,12 @@ if CommandLine.arguments.contains("--serve") {
         FileHandle.standardError.write(Data("Failed to start agent: \(error)\n".utf8))
         exit(1)
     }
-    let host = (Host.current().localizedName ?? "Mac")
+    let host = (SystemInfo.computerName)
         .replacingOccurrences(of: " ", with: "-") + ".local"
     let banner = """
         MinStats agent on port \(MinStatsProtocolVersion.defaultPort)
         device id: \(deviceID)
-        pairing:   \(auth.pairingURL(host: host, port: MinStatsProtocolVersion.defaultPort, name: Host.current().localizedName ?? "Mac"))
+        pairing:   \(auth.pairingURL(host: host, port: MinStatsProtocolVersion.defaultPort, name: SystemInfo.computerName))
 
         """
     FileHandle.standardError.write(Data(banner.utf8))

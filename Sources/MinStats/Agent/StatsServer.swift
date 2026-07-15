@@ -1,6 +1,7 @@
 import Foundation
 import MinStatsProtocol
 import Network
+import SystemConfiguration
 
 /// The agent: serves MinStats' latest sample to paired clients over the
 /// local network (and, later, a tailnet), and accepts control commands.
@@ -39,11 +40,11 @@ final class StatsServer {
 
         // Bonjour advertisement so the phone finds this Mac with no config.
         listener.service = NWListener.Service(
-            name: Host.current().localizedName ?? "Mac",
+            name: SystemInfo.computerName,
             type: MinStatsProtocolVersion.bonjourType,
             txtRecord: NWTXTRecord([
                 "id": deviceID,
-                "name": Host.current().localizedName ?? "Mac",
+                "name": SystemInfo.computerName,
                 "model": SystemInfo.model,
                 "v": String(MinStatsProtocolVersion.current),
             ])
@@ -187,7 +188,7 @@ final class StatsServer {
         return HealthDTO(
             protocol: MinStatsProtocolVersion.current,
             id: deviceID,
-            name: Host.current().localizedName ?? "Mac",
+            name: SystemInfo.computerName,
             model: SystemInfo.model,
             os: SystemInfo.osVersion,
             agent: SystemInfo.agentVersion,
@@ -238,6 +239,18 @@ final class StatsServer {
 // MARK: - System identity
 
 enum SystemInfo {
+    /// The user-visible computer name ("Example-Air").
+    ///
+    /// NOT `Host.current().localizedName`: that's a networking API that
+    /// resolves the host, and on a network with slow reverse-DNS it blocks
+    /// for ~5s — per request, since it sits in the /health path. Measured at
+    /// 0.001s on one Mac and 5.04s on another purely because of their subnets.
+    /// SCDynamicStore reads the name straight from local config, no DNS, and
+    /// it's the API that actually means "what is this Mac called".
+    static let computerName: String = {
+        (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? "Mac"
+    }()
+
     /// Raw hardware identifier (e.g. "Mac14,2"). Deliberately not mapped to
     /// a marketing name — that would be a lookup table to maintain forever.
     static let model: String = {

@@ -200,15 +200,15 @@ final class StatusBarController: NSObject {
     }
 
     @objc private func showPairing() {
-        let host = (Host.current().localizedName ?? "Mac")
+        let host = (SystemInfo.computerName)
             .replacingOccurrences(of: " ", with: "-") + ".local"
         let view = PairingView(
             pairingURL: auth.pairingURL(
                 host: host,
                 port: MinStatsProtocolVersion.defaultPort,
-                name: Host.current().localizedName ?? "Mac"
+                name: SystemInfo.computerName
             ),
-            deviceName: Host.current().localizedName ?? "Mac",
+            deviceName: SystemInfo.computerName,
             onRotate: { [weak self] in self?.rotateSecret() }
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
