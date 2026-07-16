@@ -4,3 +4,8 @@ dist/
 ios/build/
 *.xcuserstate
 xcuserdata/
+# Xcode user-specific & generated
+ios/MinStats.xcodeproj/project.xcworkspace/
+ios/MinStats.xcodeproj/xcuserdata/
+ios/MinStats.xcodeproj/xcshareddata/
+.DS_Store
