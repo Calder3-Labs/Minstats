@@ -214,7 +214,8 @@ final class StatusBarController: NSObject {
             pairingURL: auth.pairingURL(
                 host: host,
                 port: MinStatsProtocolVersion.defaultPort,
-                name: SystemInfo.computerName
+                name: SystemInfo.computerName,
+                tailnet: SystemInfo.tailscaleHost()
             ),
             deviceName: SystemInfo.computerName,
             onRotate: { [weak self] in self?.rotateSecret() }

@@ -28,10 +28,15 @@ public struct HealthDTO: Codable, Sendable {
     public let paired: Bool
     /// e.g. ["stats", "kill", "restart"] — omits "fans" on fanless Macs.
     public let capabilities: [String]
+    /// The Mac's stable Tailscale address (100.64.0.0/10), if it's on a
+    /// tailnet — reachable from anywhere on that tailnet, unlike the `.local`
+    /// name which only resolves on the LAN. Nil when Tailscale isn't running.
+    public let tailnetHost: String?
 
     public init(
         protocol protocolVersion: Int, id: String, name: String, model: String,
-        os: String, agent: String, paired: Bool, capabilities: [String]
+        os: String, agent: String, paired: Bool, capabilities: [String],
+        tailnetHost: String? = nil
     ) {
         self.protocol = protocolVersion
         self.id = id
@@ -41,6 +46,7 @@ public struct HealthDTO: Codable, Sendable {
         self.agent = agent
         self.paired = paired
         self.capabilities = capabilities
+        self.tailnetHost = tailnetHost
     }
 }
 

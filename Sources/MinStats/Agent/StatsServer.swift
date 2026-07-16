@@ -193,7 +193,8 @@ final class StatsServer {
             os: SystemInfo.osVersion,
             agent: SystemInfo.agentVersion,
             paired: true,
-            capabilities: capabilities
+            capabilities: capabilities,
+            tailnetHost: SystemInfo.tailscaleHost()
         )
     }
 
@@ -272,6 +273,34 @@ enum SystemInfo {
         let v = ProcessInfo.processInfo.operatingSystemVersion
         return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
     }()
+
+    /// This Mac's Tailscale address, or nil if it isn't on a tailnet.
+    ///
+    /// Detected by scanning interfaces for an IPv4 in 100.64.0.0/10 — Tailscale
+    /// assigns each device a stable address in that (CGNAT) range on a utun
+    /// interface. No `tailscale` CLI or MagicDNS lookup needed. Re-evaluated on
+    /// each call so it appears without an app restart if Tailscale starts later.
+    /// (A 100.64/10 address on a *local* interface is Tailscale in practice;
+    /// ISP CGNAT lives on the WAN side, not on your own interfaces.)
+    static func tailscaleHost() -> String? {
+        var addrs: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&addrs) == 0, let first = addrs else { return nil }
+        defer { freeifaddrs(addrs) }
+        for ptr in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            guard Int32(ptr.pointee.ifa_flags) & IFF_UP == IFF_UP,
+                  let sa = ptr.pointee.ifa_addr, sa.pointee.sa_family == UInt8(AF_INET)
+            else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(sa, socklen_t(sa.pointee.sa_len), &host, socklen_t(host.count),
+                              nil, 0, NI_NUMERICHOST) == 0 else { continue }
+            let ip = String(decoding: host.prefix(while: { $0 != 0 }).map(UInt8.init(bitPattern:)), as: UTF8.self)
+            let octets = ip.split(separator: ".").compactMap { Int($0) }
+            if octets.count == 4, octets[0] == 100, (64...127).contains(octets[1]) {
+                return ip
+            }
+        }
+        return nil
+    }
 
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
