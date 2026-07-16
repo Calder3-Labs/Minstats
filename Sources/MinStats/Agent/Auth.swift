@@ -41,7 +41,7 @@ final class Auth {
     /// Carries the display name as well as the host: without it the phone can
     /// only label the Mac by hostname ("192.168.1.4"), which is useless in a
     /// list of several Macs.
-    func pairingURL(host: String, port: UInt16, name: String, tailnet: String? = nil) -> String {
+    func pairingURL(host: String, port: UInt16, name: String, altHosts: [String] = []) -> String {
         let raw = secret.withUnsafeBytes { Data($0) }.base64EncodedString()
         var components = URLComponents()
         components.scheme = "minstats"
@@ -53,9 +53,9 @@ final class Auth {
             .init(name: "port", value: String(port)),
             .init(name: "secret", value: raw),
         ]
-        // Baked in when the Mac is already on a tailnet, so pairing captures the
-        // remote route. Absent → the phone works on-LAN only until re-paired.
-        if let tailnet { items.append(.init(name: "tailnet", value: tailnet)) }
+        // Extra reachable addresses (Tailscale / LAN IP), so pairing captures
+        // the remote routes. Absent → the phone works on-LAN only until re-paired.
+        if !altHosts.isEmpty { items.append(.init(name: "alt", value: altHosts.joined(separator: ","))) }
         components.queryItems = items
         return components.string ?? ""
     }

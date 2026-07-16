@@ -194,7 +194,7 @@ final class StatsServer {
             agent: SystemInfo.agentVersion,
             paired: true,
             capabilities: capabilities,
-            tailnetHost: SystemInfo.tailscaleHost()
+            altHosts: SystemInfo.reachableHosts()
         )
     }
 
@@ -274,17 +274,26 @@ enum SystemInfo {
         return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
     }()
 
-    /// This Mac's Tailscale address, or nil if it isn't on a tailnet.
+    /// Extra addresses this Mac is reachable at, beyond its `.local` name —
+    /// so a client off the LAN (where `.local` doesn't resolve) can still find
+    /// it. The app is transport-agnostic: it doesn't care *why* an address
+    /// works, only that it's another route to try. Ordered so the fastest-to-
+    /// fail-when-inapplicable comes first:
     ///
-    /// Detected by scanning interfaces for an IPv4 in 100.64.0.0/10 — Tailscale
-    /// assigns each device a stable address in that (CGNAT) range on a utun
-    /// interface. No `tailscale` CLI or MagicDNS lookup needed. Re-evaluated on
-    /// each call so it appears without an app restart if Tailscale starts later.
-    /// (A 100.64/10 address on a *local* interface is Tailscale in practice;
-    /// ISP CGNAT lives on the WAN side, not on your own interfaces.)
-    static func tailscaleHost() -> String? {
+    /// 1. **Tailscale** (100.64.0.0/10) — globally unique to this device;
+    ///    unroutable and fails instantly when the client isn't on the tailnet.
+    /// 2. **LAN IP** (RFC1918) — what a plain WireGuard tunnel into the LAN
+    ///    (e.g. a Firewalla) routes you to. Reserve it via DHCP so it's stable.
+    ///    Caveat: a LAN IP is only meaningful on *that* subnet, so on a foreign
+    ///    network it may briefly fail before "offline" — acceptable.
+    ///
+    /// Re-evaluated per call, so addresses appear without an app restart when a
+    /// tunnel comes up later.
+    static func reachableHosts() -> [String] {
+        var tailscale: String?
+        var lan: String?
         var addrs: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&addrs) == 0, let first = addrs else { return nil }
+        guard getifaddrs(&addrs) == 0, let first = addrs else { return [] }
         defer { freeifaddrs(addrs) }
         for ptr in sequence(first: first, next: { $0.pointee.ifa_next }) {
             guard Int32(ptr.pointee.ifa_flags) & IFF_UP == IFF_UP,
@@ -294,12 +303,17 @@ enum SystemInfo {
             guard getnameinfo(sa, socklen_t(sa.pointee.sa_len), &host, socklen_t(host.count),
                               nil, 0, NI_NUMERICHOST) == 0 else { continue }
             let ip = String(decoding: host.prefix(while: { $0 != 0 }).map(UInt8.init(bitPattern:)), as: UTF8.self)
-            let octets = ip.split(separator: ".").compactMap { Int($0) }
-            if octets.count == 4, octets[0] == 100, (64...127).contains(octets[1]) {
-                return ip
+            let o = ip.split(separator: ".").compactMap { Int($0) }
+            guard o.count == 4 else { continue }
+            if o[0] == 100, (64...127).contains(o[1]) {
+                tailscale = tailscale ?? ip                                   // 100.64/10 (Tailscale)
+            } else if o[0] == 10
+                || (o[0] == 172 && (16...31).contains(o[1]))
+                || (o[0] == 192 && o[1] == 168) {
+                lan = lan ?? ip                                              // RFC1918 LAN
             }
         }
-        return nil
+        return [tailscale, lan].compactMap { $0 }
     }
 
     /// Bump on any wire-visible or behavioural change. /health reports this so

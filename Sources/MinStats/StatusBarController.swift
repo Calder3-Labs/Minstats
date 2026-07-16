@@ -215,7 +215,7 @@ final class StatusBarController: NSObject {
                 host: host,
                 port: MinStatsProtocolVersion.defaultPort,
                 name: SystemInfo.computerName,
-                tailnet: SystemInfo.tailscaleHost()
+                altHosts: SystemInfo.reachableHosts()
             ),
             deviceName: SystemInfo.computerName,
             onRotate: { [weak self] in self?.rotateSecret() }
