@@ -20,6 +20,11 @@ run: bundle
 print:
 	swift run $(APP) --print
 
+# Run the agent headless (no menu bar UI), printing the pairing link. Lets the
+# whole wire API be exercised with curl before Xcode is even involved.
+serve:
+	swift run $(APP) --serve
+
 # Render the app icon (steel hex nut) into an .iconset and pack it with
 # iconutil. No Xcode needed. AppIcon.icns is committed, so this only needs
 # re-running when the artwork in GenerateIcon.swift changes.
@@ -52,4 +57,4 @@ dmg: universal
 clean:
 	rm -rf .build dist
 
-.PHONY: build bundle run print icon universal dmg clean
+.PHONY: build bundle run print serve icon universal dmg clean

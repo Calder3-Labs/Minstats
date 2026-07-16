@@ -1,70 +1,108 @@
 # MinStats
 
-A minimalist macOS menu bar app for the vitals that matter: **temperature, CPU, and RAM** — at a glance, without the clutter.
+A minimalist macOS menu bar system monitor — and a secure companion app to watch (and lightly control) your Macs from your iPhone.
 
 <p align="center">
-  <img src="docs/screenshots/panel.png" alt="MinStats panel" width="320">
+  <img src="docs/screenshots/panel.png" alt="MinStats menu bar panel" width="300">
 </p>
 
-Most system monitors try to show you everything. MinStats shows you the vital few, beautifully. One clean temperature reading in the menu bar; a quiet dropdown with the details when you want them. No graphs you'll never read, no configuration marathon.
+Most system monitors show you everything. **MinStats shows you the vital few — temperature, CPU, RAM — beautifully**, and nothing you'll never read. It started as a menu bar app because I couldn't find an elegant one. It grew a phone companion because I wanted the same glance after I walked away from the machine.
 
-## Features
+Built with **zero third-party dependencies** — everything comes from the platform (IOKit, Network.framework, CryptoKit, SwiftUI). The Mac app builds with just the Command Line Tools; no Xcode required.
 
-- **Live temperature, CPU, and RAM** in the menu bar — compact, monospaced, jitter-free
-- **Headline die temperature** — the hottest CPU/SoC sensor, the number that actually tells you if your Mac is hot
-- **Top processes** by CPU and by memory, grouped by app (all those Chrome helpers collapse into one line)
-- **Condensed sensor summary** — CPU die, power delivery, SSD, battery, and fan RPM where present
-- **Two display modes** — right-click to switch between temperature-only (minimal footprint) and the full readout
-- **°C / °F** toggle, **configurable refresh** (2s / 5s / 10s / 30s), and **launch at login**
-- **No Dock icon, no window** — it lives entirely in the menu bar
-- **Private by design** — everything is read locally from the OS. No network, no telemetry, no account.
+---
 
-## Install
+## Two parts, one design language
 
-### Download
+| | **MinStats** (macOS) | **MinStats** (iOS companion) |
+|---|---|---|
+| Lives in | the menu bar (no Dock icon, no window) | your pocket |
+| Shows | temperature · CPU · RAM · top processes · fans | the same, for every paired Mac |
+| Also does | launch at login, °C/°F, refresh rate | remotely quit an app, restart a Mac |
+| Talks over | — | an HMAC-signed local API, discovered via Bonjour |
 
-Grab the latest `MinStats.dmg` from [Releases](../../releases), open it, and drag MinStats to Applications.
+The iPhone can't read another Mac's sensors, so the menu bar app doubles as a tiny **agent**: it already samples everything and runs as you, so it serves that same sample to a paired phone over the local network — costing zero extra work.
 
-Because the app isn't yet signed with an Apple Developer ID, macOS Gatekeeper will ask on first launch. Either:
+## Highlights
 
-- **Right-click** the app → **Open** → **Open**, or
-- run `xattr -d com.apple.quarantine /Applications/MinStats.app`
+**macOS app**
+- **Headline die temperature** — the hottest CPU/SoC sensor, read via Apple's private IOHID API (no root)
+- **Cold→hot gradient bar** — the temperature's position on a 20–100 °C scale, at a glance
+- **Top processes** by CPU and by memory, grouped by app (Chrome's dozen helpers collapse to one line, with every PID tracked so "quit" quits the whole app)
+- **Fan RPM** via the SMC, and a condensed 4-row sensor summary that hides absent hardware (no fan rows on a fanless Air; no battery row on a desktop mini)
+- Compact / extended menu bar modes, °C/°F, 2/5/10/30 s refresh, launch at login (`SMAppService`)
+- Universal binary (Apple Silicon + Intel), no Dock icon
 
-This is a one-time step per machine.
-
-### Build from source
-
-No Xcode required — just the Command Line Tools (`xcode-select --install`) and their Swift toolchain.
-
-```sh
-make run          # build, bundle, and launch
-make print        # dump one sample of every metric to the terminal (no UI)
-make dmg          # build a universal (Apple Silicon + Intel) .dmg installer
-```
-
-## Compatibility
-
-- **Apple Silicon (M1/M2/M3+):** fully supported — temperature, CPU, RAM, and fans.
-- **Intel Macs:** CPU, RAM, and fans work; temperature sensor coverage is currently limited (Intel exposes temps through a different interface — contributions welcome).
+**iOS companion**
+- Discovers Macs on the network via Bonjour; pairs by scanning a QR (or pasting a link)
+- A device list of all your Macs, each polling at the Mac's own cadence
+- A detail screen that ports the Mac's visual language — same gradient bar, same process lists
+- **Remote control**: quit a runaway app or request a restart, always behind a confirmation
 
 ## How it works
 
-- **Temperature** is read via Apple's private IOHID event-system sensors — the same approach used by open-source tools like Stats and macmon. No root or extra permissions needed.
-- **Fans** come from the SMC (System Management Controller) over public IOKit calls.
-- **CPU / RAM** use the standard Mach kernel APIs (`host_processor_info`, `host_statistics64`), with memory computed the way Activity Monitor's "Memory Used" is.
-- **Top processes** use `libproc` resource-usage deltas between refreshes.
+```
+┌─────────────────── your Mac ───────────────────┐        ┌──── your iPhone ────┐
+│  Samplers (IOKit / SMC / Mach)                  │        │                     │
+│     ↓                                           │        │   Discovery (mDNS)  │
+│  StatsModel  ──snapshot()──▶  Agent (NWListener)│◀──────▶│   StatsClient       │
+│                               · Bonjour advert. │  HTTP  │   (HMAC-signs every │
+│                               · HMAC verify     │  +HMAC │    request)         │
+│                               · control (kill/  │        │   SwiftUI views     │
+│                                 restart)        │        │                     │
+└─────────────────────────────────────────────────┘        └─────────────────────┘
+            shared wire contract: MinStatsProtocol (compiled into both)
+```
 
-Because temperature relies on a private (undocumented) API, a future macOS release could change it. If a reading disappears after an update, that's the likely cause — please open an issue.
+- **Sensors.** Temperature comes from the private IOHID event-system API (the same approach Stats/macmon use — no public API exists). Fans come from the SMC over public IOKit. CPU/RAM use Mach kernel calls (`host_processor_info`, `host_statistics64`), with memory computed the way Activity Monitor's "Memory Used" is.
+- **One source of truth.** The wire format lives in a shared `MinStatsProtocol` Swift package compiled into *both* the Mac agent and the iOS app — so the contract can't drift.
+- **The agent serves the sample the menu bar already took**, so a polling phone adds no extra sampling cost.
 
-## Contributing
+## Security model
 
-Issues and pull requests are welcome, especially:
+Because the phone can *control* the Mac (quit apps, request restart), auth is front-loaded, not bolted on:
 
-- Intel Mac temperature sensor support (SMC keys)
-- Testing on hardware the maintainer doesn't have (Mac mini/Studio/Pro fan layouts, various chip generations)
+- **Every request is HMAC-SHA256 signed** over `METHOD\nPATH\nTIMESTAMP\nNONCE\nSHA256(body)`. The shared secret **never crosses the wire** — signing survives a plaintext LAN. Pairing hands the phone the secret once, via a QR code.
+- **Replay-protected**: a 60-second clock-skew window plus a 120-second nonce cache; the nonce is burned only *after* the signature validates.
+- **Control is network-scoped in code**: `/control/*` is refused unless the peer is on a private address (RFC1918 / link-local / loopback / the `100.64.0.0/10` CGNAT range Tailscale uses). "Restart my Mac" is *unreachable from the public internet* regardless of how the network is configured.
+- **Honest privilege limits**: everything runs unprivileged as the logged-in user. Killing your own apps works; root-owned processes return `denied` rather than escalating. Restart is a *request* (an app with unsaved work can veto it), so the agent never claims success — the Mac going offline is the confirmation. No privileged helper, by choice.
+- **No cloud, no account, no telemetry.** Stats stay on your network.
+
+## Build & run
+
+**macOS** — needs only the Command Line Tools:
+```sh
+make run      # build, bundle, ad-hoc sign, relaunch dist/MinStats.app
+make print    # dump one sample of everything to the terminal (no UI)
+make serve    # run the agent headless — curl-testable without Xcode
+make dmg      # universal installer at dist/MinStats.dmg
+```
+
+**iOS** — needs Xcode. See [`ios/SETUP.md`](ios/SETUP.md) for the full from-scratch guide (free Apple ID, physical device, and the gotchas that cost hours).
+
+## Project layout
+
+```
+Sources/
+  PrivateIOKit/        C shim for private IOHID + SMC symbols (IOKit-linked)
+  MinStatsProtocol/    Codable wire DTOs — shared by both apps
+  MinStats/
+    Samplers/          Temperature, CPU, Memory, Process, Fan
+    Agent/             StatsServer, Auth, HTTP, Control
+    StatsModel · StatusBarController · DetailView · main
+ios/MinStats/          the SwiftUI companion app
+Support/               Info.plist, app icon + generator
+```
+
+## Status
+
+**Working and verified on real hardware** — two Macs paired (a fanless M2 Air, an M4 mini with fans), stats and control live from the phone.
+
+Deliberately deferred (with reasons, not laziness):
+- **Remote access over the internet** — the agent already allows the Tailscale CGNAT range and pairs by hostname, so this is a near-codeless "install Tailscale" step rather than new code.
+- **Push notifications** — needs a paid Apple Developer account, and the APNs key is team-wide, which would make the no-server design personal-use-only.
+- **Distribution** — temperature uses private APIs, so the App Store is out (sandbox blocks them too). Ad-hoc signed today; Developer ID + notarization is the path.
 
 ## License
 
-[MIT](LICENSE) — free to use, modify, and distribute.
-
-A notarized, ready-to-run build is available for a few dollars for those who'd rather not compile it themselves — it supports development and saves you the Gatekeeper dance. The source here is, and remains, free.
+[MIT](LICENSE).
