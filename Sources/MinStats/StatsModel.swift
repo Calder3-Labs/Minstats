@@ -20,8 +20,10 @@ final class StatsModel {
     var memory: MemoryStats?
     var sensors: [TemperatureSensor] = []
     var fans: [FanReading] = []
-    // Pools hold 5 entries; the display count slices them so toggling
-    // 3/5 takes effect instantly without waiting for the next tick.
+    // Pools hold 10 entries: the menu bar slices its own 3/5 off the top
+    // (so toggling takes effect instantly without waiting for the next tick),
+    // while the agent serves the whole pool so the phone can show a longer
+    // list behind its expandable sections.
     private var cpuProcessPool: [ProcessEntry] = []
     private var memoryProcessPool: [ProcessEntry] = []
     var topCPUProcesses: [ProcessEntry] { Array(cpuProcessPool.prefix(topProcessCount)) }
@@ -85,7 +87,7 @@ final class StatsModel {
         fans = fanSampler.sample()
         cpuFraction = cpuSampler.sample()
         memory = memorySampler.sample()
-        (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 5)
+        (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 10)
     }
 
     /// The current values as the agent's wire format. Reads the last sample
