@@ -1,6 +1,9 @@
 .build/
 dist/
 .DS_Store
+
+# Private planning — never publish (holds kill criteria + monetization notes)
+PRODUCT-VALIDATION.md
 ios/build/
 *.xcuserstate
 xcuserdata/
