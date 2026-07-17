@@ -256,11 +256,7 @@ final class StatusBarController: NSObject {
     }
 
     @objc func showAlerts() {
-        let view = AlertsView(
-            monitor: model.alerts,
-            useFahrenheit: model.useFahrenheit,
-            machineName: SystemInfo.computerName
-        )
+        let view = AlertsView(monitor: model.alerts, model: model)
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Alerts"
         window.styleMask = NSWindow.StyleMask([.titled, .closable])
