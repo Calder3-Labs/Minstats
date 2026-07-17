@@ -92,8 +92,7 @@ struct AlertsView: View {
     private var thresholdLabel: String { display(monitor.thresholdC) }
 
     private func display(_ celsius: Double) -> String {
-        let value = model.useFahrenheit ? celsius * 9 / 5 + 32 : celsius
-        return "\(Int(value.rounded()))°\(model.useFahrenheit ? "F" : "C")"
+        AlertMonitor.tempString(celsius, fahrenheit: model.useFahrenheit)
     }
 
     private var anyChannelReady: Bool {

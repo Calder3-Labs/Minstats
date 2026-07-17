@@ -98,7 +98,7 @@ final class StatsModel {
         cpuFraction = cpuSampler.sample()
         memory = memorySampler.sample()
         (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 10)
-        alerts.evaluate(headlineC: headlineTemp, machineName: SystemInfo.computerName)
+        alerts.evaluate(headlineC: headlineTemp, machineName: SystemInfo.computerName, useFahrenheit: useFahrenheit)
     }
 
     /// The current values as the agent's wire format. Reads the last sample

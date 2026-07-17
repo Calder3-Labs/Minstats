@@ -48,7 +48,9 @@ final class AlertMonitor {
     @ObservationIgnored private let rearmMarginC = 5.0
 
     /// Called once per sample with the current headline temperature.
-    func evaluate(headlineC: Double?, machineName: String) {
+    /// `useFahrenheit` matches the menu bar's unit so the message reads in the
+    /// same units the owner sees everywhere else, not raw Celsius.
+    func evaluate(headlineC: Double?, machineName: String, useFahrenheit: Bool) {
         guard enabled, let temp = headlineC else { return }
         if temp >= thresholdC {
             guard armed else { return }
@@ -57,11 +59,17 @@ final class AlertMonitor {
             lastFired = Date()
             notify(
                 title: "\(machineName) is running hot",
-                body: String(format: "Die temperature %.0f°C (threshold %.0f°C).", temp, thresholdC)
+                body: "Die temperature \(Self.tempString(temp, fahrenheit: useFahrenheit)) (threshold \(Self.tempString(thresholdC, fahrenheit: useFahrenheit)))."
             )
         } else if temp < thresholdC - rearmMarginC {
             armed = true
         }
+    }
+
+    /// Formats a raw-Celsius value in the requested unit, e.g. "162°F".
+    static func tempString(_ celsius: Double, fahrenheit: Bool) -> String {
+        let value = fahrenheit ? celsius * 9 / 5 + 32 : celsius
+        return "\(Int(value.rounded()))°\(fahrenheit ? "F" : "C")"
     }
 
     /// Fires a message to every enabled channel. Used by both a real alert and
