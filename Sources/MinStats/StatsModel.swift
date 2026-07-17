@@ -40,6 +40,13 @@ final class StatsModel {
         didSet { UserDefaults.standard.set(useFahrenheit, forKey: "useFahrenheit") }
     }
 
+    /// Whether the phone-facing agent runs. Off by default: until the owner
+    /// opts in, MinStats exposes nothing on the network — no listener, no
+    /// Bonjour. `StatusBarController` starts/stops the server to match.
+    var phonePairingEnabled: Bool = UserDefaults.standard.bool(forKey: "phonePairingEnabled") {
+        didSet { UserDefaults.standard.set(phonePairingEnabled, forKey: "phonePairingEnabled") }
+    }
+
     var menuBarMode: MenuBarMode = MenuBarMode(
         rawValue: UserDefaults.standard.string(forKey: "menuBarMode") ?? ""
     ) ?? .extended {

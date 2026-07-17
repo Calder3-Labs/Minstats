@@ -49,12 +49,16 @@ final class StatusBarController: NSObject {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         updateTitle()
-        startAgent()
+        // Off by default: no listener until the owner opts in via the menu, so
+        // a fresh install exposes nothing on the network.
+        if model.phonePairingEnabled {
+            startAgent()
+        }
     }
 
-    /// The agent runs whenever MinStats does — it serves the sample the menu
-    /// bar already took, so it costs no extra sampling. /stats needs a valid
-    /// signature, so listening is not the same as exposing anything.
+    /// The agent serves the sample the menu bar already took, so it costs no
+    /// extra sampling. /stats needs a valid signature, so listening is not the
+    /// same as exposing anything — but it only runs when phone pairing is on.
     private func startAgent() {
         let server = StatsServer(auth: auth, deviceID: deviceID) { [model] in model.snapshot() }
         do {
@@ -185,10 +189,9 @@ final class StatusBarController: NSObject {
         fahrenheit.state = model.useFahrenheit ? .on : .off
         let launchAtLogin = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        for item in [compact, extended, fahrenheit, launchAtLogin] { item.target = self }
-
-        let pair = NSMenuItem(title: "Pair iPhone…", action: #selector(showPairing), keyEquivalent: "")
-        pair.target = self
+        let phonePairing = NSMenuItem(title: "Enable Phone Pairing", action: #selector(togglePhonePairing), keyEquivalent: "")
+        phonePairing.state = model.phonePairingEnabled ? .on : .off
+        for item in [compact, extended, fahrenheit, launchAtLogin, phonePairing] { item.target = self }
 
         menu.addItem(compact)
         menu.addItem(extended)
@@ -196,7 +199,14 @@ final class StatusBarController: NSObject {
         menu.addItem(fahrenheit)
         menu.addItem(launchAtLogin)
         menu.addItem(.separator())
-        menu.addItem(pair)
+        menu.addItem(phonePairing)
+        // Pairing only makes sense once the agent is listening, so it appears
+        // only when phone pairing is enabled.
+        if model.phonePairingEnabled {
+            let pair = NSMenuItem(title: "Pair iPhone…", action: #selector(showPairing), keyEquivalent: "")
+            pair.target = self
+            menu.addItem(pair)
+        }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit MinStats", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
@@ -240,6 +250,21 @@ final class StatusBarController: NSObject {
         pairingWindow?.close()
         pairingWindow = nil
         showPairing()
+    }
+
+    /// Opt in/out of the phone-facing agent. Enabling starts the listener;
+    /// disabling stops it (releasing the port and Bonjour) so the Mac goes back
+    /// to exposing nothing on the network.
+    @objc private func togglePhonePairing() {
+        model.phonePairingEnabled.toggle()
+        if model.phonePairingEnabled {
+            startAgent()
+        } else {
+            server?.stop()
+            server = nil
+            pairingWindow?.close()
+            pairingWindow = nil
+        }
     }
 
     @objc private func useCompactMode() { model.menuBarMode = .compact }
