@@ -27,13 +27,21 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    // The number is the data — never let it truncate. fixedSize
+                    // + priority keep it whole (3-digit Fahrenheit is the tight
+                    // case); the caption below yields first if the row is snug.
                     Text(model.headlineTemp.map { "\(Int(model.displayDegrees($0).rounded()))°" } ?? "--°")
                         .font(.system(size: 34, weight: .light, design: .rounded))
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .layoutPriority(1)
                     Text("die temperature")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
-                    Spacer()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Spacer(minLength: 4)
                     Picker("Top process count", selection: $model.topProcessCount) {
                         Text("3").tag(3)
                         Text("5").tag(5)
