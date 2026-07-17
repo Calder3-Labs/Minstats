@@ -31,7 +31,7 @@ final class StatsModel {
 
     var topProcessCount: Int = {
         let stored = UserDefaults.standard.integer(forKey: "topProcessCount")
-        return stored == 5 ? 5 : 3
+        return [3, 5, 10].contains(stored) ? stored : 3
     }() {
         didSet { UserDefaults.standard.set(topProcessCount, forKey: "topProcessCount") }
     }

@@ -37,11 +37,12 @@ struct DetailView: View {
                     Picker("Top process count", selection: $model.topProcessCount) {
                         Text("3").tag(3)
                         Text("5").tag(5)
+                        Text("10").tag(10)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .controlSize(.mini)
-                    .frame(width: 52)
+                    .frame(width: 78)
                 }
                 temperatureBar
             }
