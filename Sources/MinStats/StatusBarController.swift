@@ -37,6 +37,7 @@ final class StatusBarController: NSObject {
     private var auth: Auth
     private var server: StatsServer?
     private var pairingWindow: NSWindow?
+    private var alertsWindow: NSWindow?
 
     override init() {
         auth = Auth(deviceID: deviceID, secret: AgentIdentity.secret())
@@ -191,13 +192,15 @@ final class StatusBarController: NSObject {
         launchAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
         let phonePairing = NSMenuItem(title: "Enable Phone Pairing", action: #selector(togglePhonePairing), keyEquivalent: "")
         phonePairing.state = model.phonePairingEnabled ? .on : .off
-        for item in [compact, extended, fahrenheit, launchAtLogin, phonePairing] { item.target = self }
+        let alerts = NSMenuItem(title: "Alerts…", action: #selector(showAlerts), keyEquivalent: "")
+        for item in [compact, extended, fahrenheit, launchAtLogin, alerts, phonePairing] { item.target = self }
 
         menu.addItem(compact)
         menu.addItem(extended)
         menu.addItem(.separator())
         menu.addItem(fahrenheit)
         menu.addItem(launchAtLogin)
+        menu.addItem(alerts)
         menu.addItem(.separator())
         menu.addItem(phonePairing)
         // Pairing only makes sense once the agent is listening, so it appears
@@ -250,6 +253,22 @@ final class StatusBarController: NSObject {
         pairingWindow?.close()
         pairingWindow = nil
         showPairing()
+    }
+
+    @objc func showAlerts() {
+        let view = AlertsView(
+            monitor: model.alerts,
+            useFahrenheit: model.useFahrenheit,
+            machineName: SystemInfo.computerName
+        )
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+        window.title = "Alerts"
+        window.styleMask = NSWindow.StyleMask([.titled, .closable])
+        window.isReleasedWhenClosed = false
+        window.center()
+        alertsWindow = window
+        NSApp.activate()
+        window.makeKeyAndOrderFront(self)
     }
 
     /// Opt in/out of the phone-facing agent. Enabling starts the listener;

@@ -71,6 +71,9 @@ final class StatsModel {
     @ObservationIgnored private let memorySampler = MemorySampler()
     @ObservationIgnored private let processSampler = ProcessSampler()
     @ObservationIgnored private let fanSampler = FanSampler()
+    /// Temperature alerting (iMessage / Discord). Independent of the agent; the
+    /// config window binds to it directly.
+    @ObservationIgnored let alerts = AlertMonitor()
     @ObservationIgnored private var loop: Task<Void, Never>?
 
     init() {
@@ -95,6 +98,7 @@ final class StatsModel {
         cpuFraction = cpuSampler.sample()
         memory = memorySampler.sample()
         (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 10)
+        alerts.evaluate(headlineC: headlineTemp, machineName: SystemInfo.computerName)
     }
 
     /// The current values as the agent's wire format. Reads the last sample
