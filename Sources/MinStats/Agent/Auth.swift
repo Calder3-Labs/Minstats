@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Observation
 
 /// Request authentication for the agent.
 ///
@@ -9,8 +10,10 @@ import Foundation
 /// path, timestamp, nonce, and a hash of the body — so a kill payload can't
 /// be swapped for a different one under a captured signature.
 ///
-/// The secret lives in the Keychain (not UserDefaults, where the app's
-/// other prefs live) precisely because of what it authorizes.
+/// Every paired phone holds its OWN secret (minted per pairing, looked up by
+/// the client id it sends in X-MinStats-Key), so one phone can be revoked
+/// without kicking the others.
+@MainActor
 final class Auth {
     enum Failure: Error {
         case missingHeaders
@@ -27,22 +30,22 @@ final class Auth {
     private static let nonceTTL: TimeInterval = 120
 
     private let deviceID: String
-    private let secret: SymmetricKey
+    private let store: ClientStore
     private var seenNonces: [String: Date] = [:]
-    private let lock = NSLock()
 
-    init(deviceID: String, secret: SymmetricKey) {
+    init(deviceID: String, store: ClientStore) {
         self.deviceID = deviceID
-        self.secret = secret
+        self.store = store
     }
 
-    /// The pairing payload handed to the phone (QR / copyable string).
+    /// The pairing payload handed to the phone (QR / copyable string), for
+    /// one client slot. `id` stays the Mac's identity — what the phone lists —
+    /// while `client` + `secret` are the phone's own credentials.
     ///
     /// Carries the display name as well as the host: without it the phone can
     /// only label the Mac by hostname ("192.168.1.4"), which is useless in a
     /// list of several Macs.
-    func pairingURL(host: String, port: UInt16, name: String, altHosts: [String] = []) -> String {
-        let raw = secret.withUnsafeBytes { Data($0) }.base64EncodedString()
+    func pairingURL(for client: ClientStore.Client, host: String, port: UInt16, name: String, altHosts: [String] = []) -> String {
         var components = URLComponents()
         components.scheme = "minstats"
         components.host = "pair"
@@ -51,7 +54,8 @@ final class Auth {
             .init(name: "name", value: name),
             .init(name: "host", value: host),
             .init(name: "port", value: String(port)),
-            .init(name: "secret", value: raw),
+            .init(name: "client", value: client.id),
+            .init(name: "secret", value: client.secret.base64EncodedString()),
         ]
         // Extra reachable addresses (Tailscale / LAN IP), so pairing captures
         // the remote routes. Absent → the phone works on-LAN only until re-paired.
@@ -70,7 +74,7 @@ final class Auth {
               let provided = Data(base64Encoded: signature)
         else { throw Failure.missingHeaders }
 
-        guard key == deviceID else { throw Failure.unknownKey }
+        guard let client = store.client(for: key) else { throw Failure.unknownKey }
 
         guard let sent = Double(timestamp),
               abs(Date().timeIntervalSince1970 - sent) <= Self.maxSkew
@@ -80,25 +84,31 @@ final class Auth {
             method: method, path: path, timestamp: timestamp, nonce: nonce, body: body
         ).utf8)
         // Constant-time comparison.
-        guard HMAC<SHA256>.isValidAuthenticationCode(provided, authenticating: signed, using: secret)
-        else { throw Failure.badSignature }
+        guard HMAC<SHA256>.isValidAuthenticationCode(
+            provided, authenticating: signed, using: SymmetricKey(data: client.secret)
+        ) else { throw Failure.badSignature }
 
         // Only burn the nonce once the signature is known good, so an
         // attacker can't invalidate a legitimate nonce with a forged request.
         try claim(nonce: nonce)
+
+        // The phone is real now: its first verified request claims the slot,
+        // and the pairing window moves on to offering a fresh one.
+        store.markClaimed(client.id)
     }
 
     /// Signs a response body so the phone can verify it came from the paired
     /// Mac and not an impostor on the same network (requests prove the phone
-    /// to the Mac; this is the other direction). Bound to the request's nonce,
-    /// which is unique per request, so a captured response can never be
-    /// replayed for a different one. Must stay byte-identical to the
-    /// verification in `ios/MinStats/StatsClient.swift`.
-    func responseSignature(nonce: String, body: Data) -> String {
+    /// to the Mac; this is the other direction). Signed with the *requesting
+    /// client's* secret and bound to its nonce — unique per request, so a
+    /// captured response can never be replayed for a different one. Must stay
+    /// byte-identical to the verification in `ios/MinStats/StatsClient.swift`.
+    func responseSignature(clientID: String, nonce: String, body: Data) -> String? {
+        guard let client = store.client(for: clientID) else { return nil }
         let bodyHash = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
         let mac = HMAC<SHA256>.authenticationCode(
             for: Data("RESPONSE\n\(nonce)\n\(bodyHash)".utf8),
-            using: secret
+            using: SymmetricKey(data: client.secret)
         )
         return Data(mac).base64EncodedString()
     }
@@ -113,8 +123,6 @@ final class Auth {
     /// Records a nonce, rejecting reuse. Also prunes expired entries so the
     /// set can't grow without bound on a long-running agent.
     private func claim(nonce: String) throws {
-        lock.lock()
-        defer { lock.unlock() }
         let now = Date()
         seenNonces = seenNonces.filter { now.timeIntervalSince($0.value) < Self.nonceTTL }
         guard seenNonces[nonce] == nil else { throw Failure.replayed }
@@ -122,31 +130,162 @@ final class Auth {
     }
 }
 
-// MARK: - Persistence
+// MARK: - Client credentials
 
-/// Stable identity + secret for this Mac. The id is public (it's in the
-/// Bonjour TXT record); the secret is owner-readable only.
+/// The per-phone pairing credentials this Mac has issued.
 ///
-/// The secret lives in a 0600 file rather than the Keychain, deliberately.
-/// The Keychain ACL is bound to code identity, and this app is ad-hoc signed
-/// — so every rebuild changes its identity and `SecItemCopyMatching` *blocks
+/// One JSON file (0600) holds every client. The pairing QR always offers an
+/// *unclaimed* slot; a phone's first verified request claims it (and a fresh
+/// slot is minted), so pairing two phones back-to-back Just Works and any
+/// one phone can be revoked without touching the others.
+///
+/// The file lives on disk rather than in the Keychain, deliberately. The
+/// Keychain ACL is bound to code identity, and this app is ad-hoc signed —
+/// so every rebuild changes its identity and `SecItemCopyMatching` *blocks
 /// forever* waiting on an approval dialog a headless agent can never show
-/// (a hang, not an error). Beyond the practicality: this secret authorizes
+/// (a hang, not an error). Beyond the practicality: these secrets authorize
 /// quitting apps and requesting a restart, which is strictly less than any
 /// process already running as this user can do — so file permissions are the
 /// honest boundary here, not a downgrade. Revisit once Developer ID signing
 /// lands and code identity is stable.
+@MainActor
+@Observable
+final class ClientStore {
+    struct Client: Codable, Identifiable, Hashable {
+        let id: String
+        let secret: Data
+        let createdAt: Double
+        var claimedAt: Double?
+
+        static func fresh() -> Client {
+            Client(
+                id: UUID().uuidString,
+                secret: SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) },
+                createdAt: Date().timeIntervalSince1970,
+                claimedAt: nil
+            )
+        }
+    }
+
+    private(set) var clients: [Client] = []
+    private let deviceID: String
+
+    init(deviceID: String) {
+        self.deviceID = deviceID
+        load()
+        migrateLegacy()
+        ensureUnclaimed()
+        save()
+    }
+
+    /// The client the pairing QR currently offers. Every mutation re-ensures
+    /// one exists, so the fallback is unreachable in practice.
+    var unclaimed: Client {
+        clients.first { $0.claimedAt == nil } ?? Client.fresh()
+    }
+
+    /// Phones that have actually paired — what the revocation list shows.
+    var claimed: [Client] {
+        clients.filter { $0.claimedAt != nil }
+    }
+
+    func client(for id: String) -> Client? {
+        clients.first { $0.id == id }
+    }
+
+    func markClaimed(_ id: String) {
+        guard let index = clients.firstIndex(where: { $0.id == id }),
+              clients[index].claimedAt == nil
+        else { return }
+        clients[index].claimedAt = Date().timeIntervalSince1970
+        ensureUnclaimed()
+        save()
+    }
+
+    /// Kicks one phone: its next request is a 401, and no other phone notices.
+    func revoke(_ id: String) {
+        clients.removeAll { $0.id == id }
+        // A revoked legacy client must take its secret file with it, or
+        // migration would resurrect it on the next launch.
+        if id == deviceID {
+            try? FileManager.default.removeItem(at: AgentIdentity.legacySecretURL)
+        }
+        ensureUnclaimed()
+        save()
+    }
+
+    /// The "shared the QR with the wrong person" escape hatch: every paired
+    /// phone stops working.
+    func revokeAll() {
+        clients = []
+        try? FileManager.default.removeItem(at: AgentIdentity.legacySecretURL)
+        ensureUnclaimed()
+        save()
+    }
+
+    private func ensureUnclaimed() {
+        guard !clients.contains(where: { $0.claimedAt == nil }) else { return }
+        clients.append(.fresh())
+    }
+
+    /// An install that paired before per-phone secrets holds one shared
+    /// secret in `agent-secret`, and its phones sign with the Mac's device id
+    /// as their key — so it becomes a claimed client under that id and they
+    /// keep working untouched. Runs per device id (the app and the `--serve`
+    /// CLI have different UserDefaults domains, hence different ids, but
+    /// share this file), so each domain heals its own id on first run.
+    private func migrateLegacy() {
+        guard let legacy = AgentIdentity.legacySecret(), client(for: deviceID) == nil else { return }
+        clients.append(Client(
+            id: deviceID, secret: legacy,
+            createdAt: Date().timeIntervalSince1970,
+            claimedAt: Date().timeIntervalSince1970
+        ))
+    }
+
+    nonisolated private static var fileURL: URL {
+        AgentIdentity.supportDirectory.appendingPathComponent("agent-clients")
+    }
+
+    private func load() {
+        guard let data = try? Data(contentsOf: Self.fileURL),
+              let decoded = try? JSONDecoder().decode([Client].self, from: data)
+        else { return }
+        clients = decoded
+    }
+
+    private func save() {
+        guard let data = try? JSONEncoder().encode(clients) else { return }
+        // createFile applies the permissions at creation, so the secrets are
+        // 0600 from the first byte.
+        FileManager.default.createFile(
+            atPath: Self.fileURL.path, contents: data,
+            attributes: [.posixPermissions: 0o600]
+        )
+    }
+}
+
+// MARK: - Device identity
+
+/// Stable identity for this Mac. The id is public (it's in the Bonjour TXT
+/// record); per-phone credentials live in `ClientStore`.
 enum AgentIdentity {
     private static let idKey = "agentDeviceID"
 
-    private static var secretURL: URL {
+    static var supportDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MinStats", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: base, withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        return base.appendingPathComponent("agent-secret")
+        return base
+    }
+
+    /// Where the pre-1.5 single shared secret lived; read only for migration
+    /// into `ClientStore`, deleted when its legacy client is revoked.
+    static var legacySecretURL: URL {
+        supportDirectory.appendingPathComponent("agent-secret")
     }
 
     static func deviceID() -> String {
@@ -156,30 +295,8 @@ enum AgentIdentity {
         return fresh
     }
 
-    /// Loads the paired secret, or nil if this Mac has never been paired.
-    static func loadSecret() -> SymmetricKey? {
-        guard let data = try? Data(contentsOf: secretURL), data.count == 32 else { return nil }
-        return SymmetricKey(data: data)
-    }
-
-    /// Generates and stores a fresh secret, replacing any existing one
-    /// (which invalidates already-paired phones — that's the rotate path).
-    @discardableResult
-    static func rotateSecret() -> SymmetricKey {
-        let key = SymmetricKey(size: .bits256)
-        let data = key.withUnsafeBytes { Data($0) }
-        // createFile applies the permissions at creation, so the secret is
-        // 0600 from its first byte — write-then-chmod left a umask-default
-        // window where another local user could have read it.
-        FileManager.default.createFile(
-            atPath: secretURL.path, contents: data,
-            attributes: [.posixPermissions: 0o600]
-        )
-        return key
-    }
-
-    /// The secret, creating one on first use.
-    static func secret() -> SymmetricKey {
-        loadSecret() ?? rotateSecret()
+    static func legacySecret() -> Data? {
+        guard let data = try? Data(contentsOf: legacySecretURL), data.count == 32 else { return nil }
+        return data
     }
 }

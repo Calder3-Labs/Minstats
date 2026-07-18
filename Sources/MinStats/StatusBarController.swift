@@ -34,13 +34,15 @@ final class StatusBarController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private let deviceID = AgentIdentity.deviceID()
-    private var auth: Auth
+    private let clients: ClientStore
+    private let auth: Auth
     private var server: StatsServer?
     private var pairingWindow: NSWindow?
     private var alertsWindow: NSWindow?
 
     override init() {
-        auth = Auth(deviceID: deviceID, secret: AgentIdentity.secret())
+        clients = ClientStore(deviceID: deviceID)
+        auth = Auth(deviceID: deviceID, store: clients)
         super.init()
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(rootView: DetailView(model: model))
@@ -223,15 +225,22 @@ final class StatusBarController: NSObject {
     @objc func showPairing() {
         let host = (SystemInfo.computerName)
             .replacingOccurrences(of: " ", with: "-") + ".local"
+        // The URL is built per client slot: when a phone claims the offered
+        // slot (or a pairing is revoked), the store changes and the view
+        // re-derives a fresh QR. altHosts re-evaluates then too, so a tunnel
+        // that came up since the window opened is captured.
         let view = PairingView(
-            pairingURL: auth.pairingURL(
-                host: host,
-                port: MinStatsProtocolVersion.defaultPort,
-                name: SystemInfo.computerName,
-                altHosts: SystemInfo.reachableHosts()
-            ),
+            store: clients,
             deviceName: SystemInfo.computerName,
-            onRotate: { [weak self] in self?.rotateSecret() }
+            pairingURL: { [auth] client in
+                auth.pairingURL(
+                    for: client,
+                    host: host,
+                    port: MinStatsProtocolVersion.defaultPort,
+                    name: SystemInfo.computerName,
+                    altHosts: SystemInfo.reachableHosts()
+                )
+            }
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Pair iPhone"
@@ -241,18 +250,6 @@ final class StatusBarController: NSObject {
         pairingWindow = window
         NSApp.activate()
         window.makeKeyAndOrderFront(self)
-    }
-
-    /// New secret + restarted server, so already-paired phones stop working.
-    private func rotateSecret() {
-        AgentIdentity.rotateSecret()
-        auth = Auth(deviceID: deviceID, secret: AgentIdentity.secret())
-        server?.stop()
-        server = nil
-        startAgent()
-        pairingWindow?.close()
-        pairingWindow = nil
-        showPairing()
     }
 
     @objc func showAlerts() {

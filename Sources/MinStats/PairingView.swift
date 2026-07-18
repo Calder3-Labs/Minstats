@@ -5,14 +5,22 @@ import SwiftUI
 /// The pairing sheet: a QR the iPhone scans, plus the same payload as
 /// copyable text — the Simulator has no camera, so the paste path isn't a
 /// fallback, it's the one you'll use most while developing.
+///
+/// The QR always offers the store's unclaimed client slot. When a phone
+/// claims it (first verified request) the store mints a fresh slot and the
+/// QR silently moves on — so pairing two phones back-to-back needs no
+/// window dance. Claimed slots are listed below with per-phone revocation.
 struct PairingView: View {
-    let pairingURL: String
+    let store: ClientStore
     let deviceName: String
-    var onRotate: () -> Void
+    /// Built per slot so the QR refreshes when the offered client changes.
+    let pairingURL: (ClientStore.Client) -> String
 
     @State private var copied = false
 
     var body: some View {
+        let client = store.unclaimed
+        let url = pairingURL(client)
         VStack(spacing: 14) {
             VStack(spacing: 4) {
                 Text("Pair iPhone")
@@ -26,7 +34,7 @@ struct PairingView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let qr = Self.qrImage(from: pairingURL) {
+            if let qr = Self.qrImage(from: url) {
                 Image(nsImage: qr)
                     .interpolation(.none)
                     .resizable()
@@ -46,7 +54,7 @@ struct PairingView: View {
                 // clipboard managers that respect it won't display or
                 // archive the secret.
                 pasteboard.setString("", forType: .init("org.nspasteboard.ConcealedType"))
-                pasteboard.setString(pairingURL, forType: .string)
+                pasteboard.setString(url, forType: .string)
                 copied = true
                 // The link is a bearer credential; don't let it sit on a
                 // pasteboard that Universal Clipboard syncs everywhere.
@@ -60,13 +68,38 @@ struct PairingView: View {
                 }
             }
             .controlSize(.small)
+            // A claim or revocation swaps the offered slot; the pasteboard's
+            // old link is dead, so don't keep claiming it was copied.
+            .onChange(of: client.id) { copied = false }
+
+            if !store.claimed.isEmpty {
+                Divider()
+                VStack(spacing: 6) {
+                    ForEach(store.claimed) { paired in
+                        HStack {
+                            Text("Phone · paired \(Self.label(paired.claimedAt))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            // One phone, kicked alone: its next request 401s
+                            // and no other phone notices.
+                            Button("Revoke", role: .destructive) {
+                                store.revoke(paired.id)
+                            }
+                            .controlSize(.mini)
+                        }
+                    }
+                }
+            }
 
             Divider()
 
-            // Rotating invalidates every paired phone — the "I shared this
-            // QR with the wrong person" escape hatch.
-            Button("Rotate secret…", role: .destructive) {
-                onRotate()
+            // The "shared this QR with the wrong person" escape hatch: wipes
+            // every pairing INCLUDING the offered slot (a photographed QR
+            // stays valid until its slot is claimed or discarded, so per-row
+            // revocation alone can't cover a leak).
+            Button("Revoke all pairings…", role: .destructive) {
+                store.revokeAll()
                 copied = false
             }
             .controlSize(.small)
@@ -80,6 +113,12 @@ struct PairingView: View {
         }
         .padding(18)
         .frame(width: 260)
+    }
+
+    private static func label(_ claimedAt: Double?) -> String {
+        guard let claimedAt else { return "—" }
+        return Date(timeIntervalSince1970: claimedAt)
+            .formatted(date: .abbreviated, time: .shortened)
     }
 
     private static func qrImage(from string: String) -> NSImage? {

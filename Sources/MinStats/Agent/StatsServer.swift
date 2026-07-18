@@ -208,14 +208,17 @@ final class StatsServer {
         return .json(RestartResponseDTO())
     }
 
-    /// Signs a response with the request's nonce, proving to the phone that
-    /// it came from the paired Mac (see `Auth.responseSignature`). Only
-    /// reached after `authorize`, so the nonce header is always present —
-    /// but degrade to unsigned rather than trap if it somehow isn't.
+    /// Signs a response with the requesting client's secret and nonce,
+    /// proving to the phone that it came from the paired Mac (see
+    /// `Auth.responseSignature`). Only reached after `authorize`, so the
+    /// headers are always present — but degrade to unsigned rather than
+    /// trap if they somehow aren't.
     private func signed(_ response: HTTP.Response, for request: HTTP.Request) -> HTTP.Response {
-        guard let nonce = request.headers["x-minstats-nonce"] else { return response }
+        guard let nonce = request.headers["x-minstats-nonce"],
+              let clientID = request.headers["x-minstats-key"]
+        else { return response }
         var response = response
-        response.signature = auth.responseSignature(nonce: nonce, body: response.body)
+        response.signature = auth.responseSignature(clientID: clientID, nonce: nonce, body: response.body)
         return response
     }
 
@@ -360,5 +363,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "1.4.2"
+    static let agentVersion = "1.5.0"
 }

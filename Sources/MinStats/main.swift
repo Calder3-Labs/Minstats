@@ -89,9 +89,9 @@ if CommandLine.arguments.contains("--serve") {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     let model = StatsModel()
-    let secret = AgentIdentity.secret()
     let deviceID = AgentIdentity.deviceID()
-    let auth = Auth(deviceID: deviceID, secret: secret)
+    let store = ClientStore(deviceID: deviceID)
+    let auth = Auth(deviceID: deviceID, store: store)
     let server = StatsServer(auth: auth, deviceID: deviceID) { model.snapshot() }
     do {
         try server.start()
@@ -104,7 +104,7 @@ if CommandLine.arguments.contains("--serve") {
     let banner = """
         MinStats agent on port \(MinStatsProtocolVersion.defaultPort)
         device id: \(deviceID)
-        pairing:   \(auth.pairingURL(host: host, port: MinStatsProtocolVersion.defaultPort, name: SystemInfo.computerName, altHosts: SystemInfo.reachableHosts()))
+        pairing:   \(auth.pairingURL(for: store.unclaimed, host: host, port: MinStatsProtocolVersion.defaultPort, name: SystemInfo.computerName, altHosts: SystemInfo.reachableHosts()))
 
         """
     FileHandle.standardError.write(Data(banner.utf8))
