@@ -126,7 +126,7 @@ final class StatsServer {
 
         case ("GET", "/stats"):
             if let denial = authorize(request) { return denial }
-            return .json(snapshot())
+            return signed(.json(snapshot()), for: request)
 
         case ("POST", "/control/kill"), ("POST", "/control/restart"):
             // Control is refused outright from anything but a private
@@ -137,9 +137,9 @@ final class StatsServer {
                 return .error("control is restricted to private networks", status: 403)
             }
             if let denial = authorize(request) { return denial }
-            return request.path == "/control/kill"
+            return signed(request.path == "/control/kill"
                 ? handleKill(request)
-                : handleRestart(request)
+                : handleRestart(request), for: request)
 
         case (_, "/health"), (_, "/stats"), (_, "/control/kill"), (_, "/control/restart"):
             return .error("method not allowed", status: 405)
@@ -168,6 +168,17 @@ final class StatsServer {
         }
         Control.requestRestart()
         return .json(RestartResponseDTO())
+    }
+
+    /// Signs a response with the request's nonce, proving to the phone that
+    /// it came from the paired Mac (see `Auth.responseSignature`). Only
+    /// reached after `authorize`, so the nonce header is always present —
+    /// but degrade to unsigned rather than trap if it somehow isn't.
+    private func signed(_ response: HTTP.Response, for request: HTTP.Request) -> HTTP.Response {
+        guard let nonce = request.headers["x-minstats-nonce"] else { return response }
+        var response = response
+        response.signature = auth.responseSignature(nonce: nonce, body: response.body)
+        return response
     }
 
     private func authorize(_ request: HTTP.Request) -> HTTP.Response? {
@@ -319,5 +330,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "1.3.1"
+    static let agentVersion = "1.4.0"
 }

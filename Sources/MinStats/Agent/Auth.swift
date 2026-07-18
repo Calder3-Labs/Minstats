@@ -88,6 +88,21 @@ final class Auth {
         try claim(nonce: nonce)
     }
 
+    /// Signs a response body so the phone can verify it came from the paired
+    /// Mac and not an impostor on the same network (requests prove the phone
+    /// to the Mac; this is the other direction). Bound to the request's nonce,
+    /// which is unique per request, so a captured response can never be
+    /// replayed for a different one. Must stay byte-identical to the
+    /// verification in `ios/MinStats/StatsClient.swift`.
+    func responseSignature(nonce: String, body: Data) -> String {
+        let bodyHash = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+        let mac = HMAC<SHA256>.authenticationCode(
+            for: Data("RESPONSE\n\(nonce)\n\(bodyHash)".utf8),
+            using: secret
+        )
+        return Data(mac).base64EncodedString()
+    }
+
     /// The exact bytes both sides sign. Body is included as a hash so large
     /// payloads don't have to be re-sent through the MAC.
     static func signingString(method: String, path: String, timestamp: String, nonce: String, body: Data) -> String {

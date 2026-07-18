@@ -15,6 +15,10 @@ enum HTTP {
     struct Response {
         let status: Int
         let body: Data
+        /// HMAC over the body, bound to the request's nonce — proves to the
+        /// phone that this response came from the paired Mac, not an impostor
+        /// on the same network. Set only on authenticated routes.
+        var signature: String? = nil
 
         static func json(_ value: some Encodable, status: Int = 200) -> Response {
             let encoder = JSONEncoder()
@@ -32,6 +36,9 @@ enum HTTP {
             var head = "HTTP/1.1 \(status) \(HTTP.reason(status))\r\n"
             head += "Content-Type: application/json\r\n"
             head += "Content-Length: \(body.count)\r\n"
+            if let signature {
+                head += "X-MinStats-Signature: \(signature)\r\n"
+            }
             // The agent is single-request-per-connection: simpler, and the
             // client polls on its own cadence anyway.
             head += "Connection: close\r\n\r\n"
@@ -73,7 +80,13 @@ enum HTTP {
             headers[name] = value
         }
 
-        let expected = Int(headers["content-length"] ?? "0") ?? 0
+        // A negative length would build an invalid Range below (a crash any
+        // unauthenticated peer could trigger); anything past the caller's
+        // buffer cap can never complete. Both get nil — the caller's cap
+        // logic disposes of the connection.
+        guard let expected = Int(headers["content-length"] ?? "0"),
+              (0...(256 * 1024)).contains(expected)
+        else { return nil }
         let bodyStart = headEnd.upperBound
         let available = buffer.count - bodyStart
         guard available >= expected else { return nil }  // keep reading
