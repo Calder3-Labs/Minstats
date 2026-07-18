@@ -17,36 +17,31 @@ public enum MinStatsProtocolVersion {
 // MARK: - Identity
 
 /// `GET /health` — unauthenticated so a client can list a Mac before
-/// pairing. Deliberately exposes nothing the Bonjour TXT record doesn't.
+/// pairing, so it carries only what the Bonjour TXT record already
+/// broadcasts, plus the agent version — the one remote diagnostic worth
+/// having ("did my update land?"). The OS version and reachable addresses
+/// (Tailscale/LAN IPs) used to be here and were moved out deliberately:
+/// they fingerprinted the Mac to any peer on any network it joins. The
+/// alt routes travel in the pairing link, which is where they belong.
 public struct HealthDTO: Codable, Sendable {
     public let `protocol`: Int
     public let id: String
     public let name: String
     public let model: String
-    public let os: String
     public let agent: String
-    public let paired: Bool
     /// e.g. ["stats", "kill", "restart"] — omits "fans" on fanless Macs.
     public let capabilities: [String]
-    /// Extra addresses this Mac is reachable at beyond its `.local` name
-    /// (Tailscale IP, LAN IP, …), for clients off the LAN where `.local`
-    /// doesn't resolve. Transport-agnostic: just "other routes to try."
-    public let altHosts: [String]
 
     public init(
         protocol protocolVersion: Int, id: String, name: String, model: String,
-        os: String, agent: String, paired: Bool, capabilities: [String],
-        altHosts: [String] = []
+        agent: String, capabilities: [String]
     ) {
         self.protocol = protocolVersion
         self.id = id
         self.name = name
         self.model = model
-        self.os = os
         self.agent = agent
-        self.paired = paired
         self.capabilities = capabilities
-        self.altHosts = altHosts
     }
 }
 

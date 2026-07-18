@@ -239,11 +239,8 @@ final class StatsServer {
             id: deviceID,
             name: SystemInfo.computerName,
             model: SystemInfo.model,
-            os: SystemInfo.osVersion,
             agent: SystemInfo.agentVersion,
-            paired: true,
-            capabilities: capabilities,
-            altHosts: SystemInfo.reachableHosts()
+            capabilities: capabilities
         )
     }
 
@@ -318,11 +315,6 @@ enum SystemInfo {
         return String(decoding: buffer.prefix(while: { $0 != 0 }).map(UInt8.init(bitPattern:)), as: UTF8.self)
     }()
 
-    static let osVersion: String = {
-        let v = ProcessInfo.processInfo.operatingSystemVersion
-        return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
-    }()
-
     /// Extra addresses this Mac is reachable at, beyond its `.local` name —
     /// so a client off the LAN (where `.local` doesn't resolve) can still find
     /// it. The app is transport-agnostic: it doesn't care *why* an address
@@ -368,5 +360,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "1.4.1"
+    static let agentVersion = "1.4.2"
 }

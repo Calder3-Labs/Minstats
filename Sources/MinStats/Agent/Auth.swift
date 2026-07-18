@@ -168,9 +168,13 @@ enum AgentIdentity {
     static func rotateSecret() -> SymmetricKey {
         let key = SymmetricKey(size: .bits256)
         let data = key.withUnsafeBytes { Data($0) }
-        let url = secretURL
-        try? data.write(to: url, options: [.atomic])
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        // createFile applies the permissions at creation, so the secret is
+        // 0600 from its first byte — write-then-chmod left a umask-default
+        // window where another local user could have read it.
+        FileManager.default.createFile(
+            atPath: secretURL.path, contents: data,
+            attributes: [.posixPermissions: 0o600]
+        )
         return key
     }
 

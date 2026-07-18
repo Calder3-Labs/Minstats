@@ -39,10 +39,25 @@ struct PairingView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Button(copied ? "Copied" : "Copy pairing link") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(pairingURL, forType: .string)
+            Button(copied ? "Copied — clears in 1 min" : "Copy pairing link") {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                // The de-facto "concealed" marker (nspasteboard.org):
+                // clipboard managers that respect it won't display or
+                // archive the secret.
+                pasteboard.setString("", forType: .init("org.nspasteboard.ConcealedType"))
+                pasteboard.setString(pairingURL, forType: .string)
                 copied = true
+                // The link is a bearer credential; don't let it sit on a
+                // pasteboard that Universal Clipboard syncs everywhere.
+                // Cleared only if it's still ours — never clobber something
+                // the owner copied since.
+                let count = pasteboard.changeCount
+                DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+                    guard NSPasteboard.general.changeCount == count else { return }
+                    NSPasteboard.general.clearContents()
+                    copied = false
+                }
             }
             .controlSize(.small)
 
