@@ -1,4 +1,5 @@
 import Foundation
+import MinStatsProtocol
 
 /// Watches the headline die temperature and fires a notification when it runs
 /// hot — to a channel the *owner* already has (iMessage to yourself, a Discord
@@ -86,6 +87,36 @@ final class AlertMonitor {
 
     func sendTest(machineName: String) {
         notify(title: "MinStats test", body: "Alerts from \(machineName) are working.")
+    }
+
+    // MARK: - Remote config (phone)
+
+    /// True when an enabled channel actually has somewhere to send — so the
+    /// phone can warn that alerts are on but would fire into the void. Reuses
+    /// the same https validation the delivery path does.
+    var channelsConfigured: Bool {
+        (imessageEnabled && !imessageRecipient.isEmpty)
+            || (discordEnabled && DiscordNotifier.validated(discordWebhook) != nil)
+    }
+
+    /// The wire view of the alert config — the temperature options only, never
+    /// the channel secrets (webhook URL / iMessage recipient stay Mac-side).
+    func configDTO() -> AlertConfigDTO {
+        AlertConfigDTO(enabled: enabled, thresholdC: thresholdC, channelsConfigured: channelsConfigured)
+    }
+
+    /// Applies a remote update from the phone. Only the temperature options are
+    /// settable; the read-only `channelsConfigured` is ignored, and the channel
+    /// details are never on the wire to begin with. The threshold is clamped to
+    /// a sane range so a buggy or hostile client can't neuter alerting with an
+    /// absurd value (a garbage/NaN threshold is dropped, keeping the current one).
+    @discardableResult
+    func apply(_ dto: AlertConfigDTO) -> AlertConfigDTO {
+        enabled = dto.enabled
+        if dto.thresholdC.isFinite {
+            thresholdC = min(max(dto.thresholdC, 30), 120)
+        }
+        return configDTO()
     }
 }
 

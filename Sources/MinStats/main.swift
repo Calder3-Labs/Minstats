@@ -92,7 +92,12 @@ if CommandLine.arguments.contains("--serve") {
     let deviceID = AgentIdentity.deviceID()
     let store = ClientStore(deviceID: deviceID)
     let auth = Auth(deviceID: deviceID, store: store)
-    let server = StatsServer(auth: auth, deviceID: deviceID) { model.snapshot() }
+    let server = StatsServer(
+        auth: auth, deviceID: deviceID,
+        snapshot: { model.snapshot() },
+        alertConfig: { model.alerts.configDTO() },
+        setAlertConfig: { dto in model.alerts.apply(dto) }
+    )
     do {
         try server.start()
     } catch {

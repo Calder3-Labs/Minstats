@@ -45,6 +45,42 @@ public struct HealthDTO: Codable, Sendable {
     }
 }
 
+// MARK: - Alerts
+
+/// `GET /alerts` (read) and `PUT /alerts` (write) — the non-sensitive
+/// temperature-alert settings, so a paired phone can tune *what to alert on*
+/// remotely. Deliberately carries **no delivery-channel details**: the Discord
+/// webhook is a bearer credential and the iMessage recipient is PII, so both
+/// stay Mac-only and never cross the wire.
+///
+/// `thresholdC` is raw Celsius (the client formats °C/°F). `channelsConfigured`
+/// is a read-only hint — is there anywhere for an alert to actually go? — so the
+/// phone can warn when alerts are on but would fire into the void; the agent
+/// ignores it on write.
+public struct AlertConfigDTO: Codable, Sendable {
+    public let enabled: Bool
+    public let thresholdC: Double
+    public let channelsConfigured: Bool
+
+    public init(enabled: Bool, thresholdC: Double, channelsConfigured: Bool = false) {
+        self.enabled = enabled
+        self.thresholdC = thresholdC
+        self.channelsConfigured = channelsConfigured
+    }
+
+    enum CodingKeys: String, CodingKey { case enabled, thresholdC, channelsConfigured }
+
+    // `channelsConfigured` is a read-only hint the agent derives and ignores on
+    // write, so it's optional on decode — a PUT carrying only the two settable
+    // fields is valid input, not malformed.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        thresholdC = try c.decode(Double.self, forKey: .thresholdC)
+        channelsConfigured = try c.decodeIfPresent(Bool.self, forKey: .channelsConfigured) ?? false
+    }
+}
+
 // MARK: - Stats
 
 public struct SensorDTO: Codable, Sendable {

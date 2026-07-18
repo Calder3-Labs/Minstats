@@ -18,18 +18,26 @@ final class StatsServer {
     /// Supplies the most recent sample. The server never samples itself —
     /// a polling phone costs zero extra IOKit work.
     private let snapshot: @MainActor () -> StatsDTO
+    /// Reads / writes the temperature-alert config for the phone. Channel
+    /// secrets never cross this boundary (see `AlertConfigDTO`).
+    private let alertConfig: @MainActor () -> AlertConfigDTO
+    private let setAlertConfig: @MainActor (AlertConfigDTO) -> AlertConfigDTO
     private var listener: NWListener?
 
     init(
         port: UInt16 = MinStatsProtocolVersion.defaultPort,
         auth: Auth,
         deviceID: String,
-        snapshot: @escaping @MainActor () -> StatsDTO
+        snapshot: @escaping @MainActor () -> StatsDTO,
+        alertConfig: @escaping @MainActor () -> AlertConfigDTO,
+        setAlertConfig: @escaping @MainActor (AlertConfigDTO) -> AlertConfigDTO
     ) {
         self.port = NWEndpoint.Port(rawValue: port) ?? 51847
         self.auth = auth
         self.deviceID = deviceID
         self.snapshot = snapshot
+        self.alertConfig = alertConfig
+        self.setAlertConfig = setAlertConfig
     }
 
     func start() throws {
@@ -166,6 +174,17 @@ final class StatsServer {
             if let denial = authorize(request) { return denial }
             return signed(.json(snapshot()), for: request)
 
+        case ("GET", "/alerts"):
+            if let denial = authorize(request) { return denial }
+            return signed(.json(alertConfig()), for: request)
+
+        case ("PUT", "/alerts"):
+            // Config, not control: a threshold isn't destructive like
+            // restart/kill, so it's signed but NOT private-peer-gated —
+            // deliberately reachable over Tailscale.
+            if let denial = authorize(request) { return denial }
+            return signed(handleSetAlerts(request), for: request)
+
         case ("POST", "/control/kill"), ("POST", "/control/restart"):
             // Control is refused outright from anything but a private
             // address — the code-level guarantee that "restart my Mac"
@@ -179,12 +198,21 @@ final class StatsServer {
                 ? handleKill(request)
                 : handleRestart(request), for: request)
 
-        case (_, "/health"), (_, "/stats"), (_, "/control/kill"), (_, "/control/restart"):
+        case (_, "/health"), (_, "/stats"), (_, "/alerts"), (_, "/control/kill"), (_, "/control/restart"):
             return .error("method not allowed", status: 405)
 
         default:
             return .error("not found", status: 404)
         }
+    }
+
+    private func handleSetAlerts(_ request: HTTP.Request) -> HTTP.Response {
+        guard let body = try? JSONDecoder().decode(AlertConfigDTO.self, from: request.body) else {
+            return .error("malformed request", status: 400)
+        }
+        // Returns the config as actually applied (threshold clamped), so the
+        // phone's optimistic value snaps to what the Mac accepted.
+        return .json(setAlertConfig(body))
     }
 
     private func handleKill(_ request: HTTP.Request) -> HTTP.Response {
@@ -363,5 +391,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "1.6.1"
+    static let agentVersion = "1.7.0"
 }

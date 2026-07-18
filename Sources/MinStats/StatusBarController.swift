@@ -63,7 +63,12 @@ final class StatusBarController: NSObject {
     /// extra sampling. /stats needs a valid signature, so listening is not the
     /// same as exposing anything — but it only runs when phone pairing is on.
     private func startAgent() {
-        let server = StatsServer(auth: auth, deviceID: deviceID) { [model] in model.snapshot() }
+        let server = StatsServer(
+            auth: auth, deviceID: deviceID,
+            snapshot: { [model] in model.snapshot() },
+            alertConfig: { [model] in model.alerts.configDTO() },
+            setAlertConfig: { [model] dto in model.alerts.apply(dto) }
+        )
         do {
             try server.start()
             self.server = server
