@@ -1,6 +1,10 @@
 APP    := MinStats
 BUNDLE := dist/$(APP).app
 BIN    := .build/release/$(APP)
+# The one version truth is agentVersion in the source; the bundle's
+# Info.plist is stamped from it so Finder's Get Info can never drift
+# from what the menu and /health report.
+VERSION := $(shell sed -n 's/.*agentVersion = "\(.*\)"/\1/p' Sources/MinStats/Agent/StatsServer.swift)
 
 build:
 	swift build -c release
@@ -10,6 +14,8 @@ bundle: build
 	mkdir -p $(BUNDLE)/Contents/MacOS $(BUNDLE)/Contents/Resources
 	cp $(BIN) $(BUNDLE)/Contents/MacOS/$(APP)
 	cp Support/Info.plist $(BUNDLE)/Contents/Info.plist
+	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" $(BUNDLE)/Contents/Info.plist
+	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" $(BUNDLE)/Contents/Info.plist
 	cp Support/AppIcon.icns $(BUNDLE)/Contents/Resources/AppIcon.icns
 	codesign --force --sign - $(BUNDLE)
 
@@ -47,6 +53,8 @@ dmg: universal
 		.build/x86_64-apple-macosx/release/$(APP) \
 		-output $(BUNDLE)/Contents/MacOS/$(APP)
 	cp Support/Info.plist $(BUNDLE)/Contents/Info.plist
+	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" $(BUNDLE)/Contents/Info.plist
+	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" $(BUNDLE)/Contents/Info.plist
 	cp Support/AppIcon.icns $(BUNDLE)/Contents/Resources/AppIcon.icns
 	codesign --force --sign - $(BUNDLE)
 	cp -R $(BUNDLE) dist/dmg/

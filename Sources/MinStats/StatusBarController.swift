@@ -213,6 +213,10 @@ final class StatusBarController: NSObject {
             menu.addItem(pair)
         }
         menu.addItem(.separator())
+        // No action → auto-disabled: a label, not a control. agentVersion is
+        // the single version truth (also /health and the bundle's Info.plist),
+        // so what the menu says is what the wire reports.
+        menu.addItem(NSMenuItem(title: "MinStats \(SystemInfo.agentVersion)", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit MinStats", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         // With a menu attached, performClick pops it synchronously and
