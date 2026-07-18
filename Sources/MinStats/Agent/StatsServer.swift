@@ -50,7 +50,7 @@ final class StatsServer {
             ])
         )
         listener.newConnectionHandler = { [weak self] connection in
-            Task { @MainActor in self?.accept(connection) }
+            self?.accept(connection)   // already on `queue` — no hop
         }
         // Without this, a bind failure (port taken, local-network denied)
         // is completely silent — the agent just never answers.
@@ -66,7 +66,7 @@ final class StatsServer {
                 break
             }
         }
-        listener.start(queue: .main)
+        listener.start(queue: Self.queue)
         self.listener = listener
     }
 
@@ -77,12 +77,50 @@ final class StatsServer {
 
     // MARK: - Connection handling
 
-    private func accept(_ connection: NWConnection) {
-        connection.start(queue: .main)
+    /// All listener and connection work runs here, off the main thread, so a
+    /// burst of connections can't jank the menu bar UI. Serial, so the
+    /// connection counter below needs no lock. Only routing hops to the main
+    /// actor — the samplers and Control live there.
+    nonisolated private static let queue = DispatchQueue(label: "MinStats.agent")
+
+    /// Bounds on rude peers: more simultaneous connections than this are
+    /// refused outright, and one that hasn't finished its exchange within the
+    /// deadline is cut. The phone races ~3 routes per poll and a legitimate
+    /// exchange takes milliseconds, so neither bound is ever felt.
+    nonisolated private static let maxConnections = 16
+    nonisolated private static let connectionDeadline: TimeInterval = 10
+
+    /// Confined to `queue` — accept and every state change run there.
+    nonisolated(unsafe) private var activeConnections = 0
+
+    nonisolated private func accept(_ connection: NWConnection) {
+        guard activeConnections < Self.maxConnections else {
+            connection.cancel()   // over the cap: refuse without starting
+            return
+        }
+        activeConnections += 1
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .failed:
+                connection.cancel()   // guarantee the terminal .cancelled below
+            case .cancelled:
+                self?.activeConnections -= 1
+                connection.stateUpdateHandler = nil   // break the self-retain cycle
+            default:
+                break
+            }
+        }
+        connection.start(queue: Self.queue)
+        // The deadline reaps held-open sockets (and half-sent junk the parser
+        // never completes on) — the counterpart of the cap, so slots can't be
+        // pinned down indefinitely.
+        Self.queue.asyncAfter(deadline: .now() + Self.connectionDeadline) { [weak connection] in
+            connection?.cancel()
+        }
         receive(connection, buffer: Data())
     }
 
-    private func receive(_ connection: NWConnection, buffer: Data) {
+    nonisolated private func receive(_ connection: NWConnection, buffer: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] chunk, _, isComplete, error in
             guard let self else { return }
             var buffer = buffer
@@ -97,18 +135,18 @@ final class StatsServer {
                 connection.cancel()
                 return
             }
-            Task { @MainActor in
-                if let request = HTTP.parse(buffer) {
+            if let request = HTTP.parse(buffer) {
+                Task { @MainActor in
                     let response = self.route(request, from: connection)
                     self.send(response, on: connection)
-                } else {
-                    self.receive(connection, buffer: buffer)  // need more bytes
                 }
+            } else {
+                self.receive(connection, buffer: buffer)  // need more bytes
             }
         }
     }
 
-    private func send(_ response: HTTP.Response, on connection: NWConnection) {
+    nonisolated private func send(_ response: HTTP.Response, on connection: NWConnection) {
         connection.send(content: response.wireData, completion: .contentProcessed { _ in
             connection.cancel()
         })
@@ -330,5 +368,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "1.4.0"
+    static let agentVersion = "1.4.1"
 }
