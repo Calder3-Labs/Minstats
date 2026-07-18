@@ -19,9 +19,14 @@ bundle: build
 	cp Support/AppIcon.icns $(BUNDLE)/Contents/Resources/AppIcon.icns
 	codesign --force --sign - $(BUNDLE)
 
+# Install to /Applications and launch THAT copy: SMAppService's login item
+# resolves to /Applications/MinStats.app, so leaving a stale bundle there
+# means every reboot silently regresses to it while dist/ runs the new code.
 run: bundle
 	pkill -x $(APP) || true
-	open $(BUNDLE)
+	rm -rf /Applications/$(APP).app
+	cp -R $(BUNDLE) /Applications/$(APP).app
+	open /Applications/$(APP).app
 
 print:
 	swift run $(APP) --print
