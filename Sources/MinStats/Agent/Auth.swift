@@ -95,6 +95,9 @@ final class Auth {
         // The phone is real now: its first verified request claims the slot,
         // and the pairing window moves on to offering a fresh one.
         store.markClaimed(client.id)
+        if let name = headers["x-minstats-client-name"] {
+            store.noteName(name, for: client.id)
+        }
     }
 
     /// Signs a response body so the phone can verify it came from the paired
@@ -156,13 +159,17 @@ final class ClientStore {
         let secret: Data
         let createdAt: Double
         var claimedAt: Double?
+        /// What the phone calls itself (X-MinStats-Client-Name) — recorded
+        /// only from requests whose signature verified. Display-only.
+        var name: String?
 
         static func fresh() -> Client {
             Client(
                 id: UUID().uuidString,
                 secret: SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) },
                 createdAt: Date().timeIntervalSince1970,
-                claimedAt: nil
+                claimedAt: nil,
+                name: nil
             )
         }
     }
@@ -199,6 +206,23 @@ final class ClientStore {
         else { return }
         clients[index].claimedAt = Date().timeIntervalSince1970
         ensureUnclaimed()
+        save()
+    }
+
+    /// Records what a phone calls itself. Trusted only as far as it's
+    /// reached from `Auth.verify` AFTER the signature validated; sanitized
+    /// because it's still remote input headed for the UI.
+    func noteName(_ raw: String, for id: String) {
+        let decoded = raw.removingPercentEncoding ?? raw
+        let name = String(decoded
+            .components(separatedBy: .controlCharacters).joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(40))
+        guard !name.isEmpty,
+              let index = clients.firstIndex(where: { $0.id == id }),
+              clients[index].name != name
+        else { return }
+        clients[index].name = name
         save()
     }
 

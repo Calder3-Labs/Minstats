@@ -77,7 +77,11 @@ struct PairingView: View {
                 VStack(spacing: 6) {
                     ForEach(store.claimed) { paired in
                         HStack {
-                            Text("Phone · paired \(Self.label(paired.claimedAt))")
+                            // The phone's self-reported name; hardware id
+                            // ("iPhone17,3") until Apple's entitlement ever
+                            // unlocks the personal one. Pre-1.6 phones sent
+                            // nothing — they stay a plain "Phone".
+                            Text("\(paired.name ?? "Phone") · paired \(Self.label(paired.claimedAt))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer()
