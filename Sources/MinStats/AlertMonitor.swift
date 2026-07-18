@@ -79,7 +79,7 @@ final class AlertMonitor {
         if imessageEnabled, !imessageRecipient.isEmpty {
             IMessageNotifier.send(to: imessageRecipient, message: message)
         }
-        if discordEnabled, let url = URL(string: discordWebhook), !discordWebhook.isEmpty {
+        if discordEnabled, let url = DiscordNotifier.validated(discordWebhook) {
             DiscordNotifier.send(webhook: url, message: message)
         }
     }
@@ -92,6 +92,19 @@ final class AlertMonitor {
 /// Posts to a Discord webhook — a plain outbound POST, no auth to store beyond
 /// the URL. Fire-and-forget; a failed alert logs but never blocks sampling.
 enum DiscordNotifier {
+    /// A webhook we're willing to POST to: **HTTPS only**. An alert reveals the
+    /// machine name and — implicitly — that you're away, so it must never cross
+    /// the network in cleartext. Returns nil for empty, plain-http, or
+    /// scheme-less input, which is also what disables the Send Test button.
+    static func validated(_ raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              url.scheme?.lowercased() == "https",
+              let host = url.host, !host.isEmpty
+        else { return nil }
+        return url
+    }
+
     static func send(webhook: URL, message: String) {
         var request = URLRequest(url: webhook)
         request.httpMethod = "POST"
@@ -113,28 +126,29 @@ enum DiscordNotifier {
 /// first send; the "Send Test" button is the natural trigger).
 enum IMessageNotifier {
     static func send(to recipient: String, message: String) {
-        // AppleScript string literals can't span newlines and treat " and \ as
-        // special — sanitise both the recipient and the (single-line) message.
-        let safeRecipient = escape(recipient)
-        let safeMessage = escape(message.replacingOccurrences(of: "\n", with: " "))
+        // The recipient and message are passed as osascript ARGUMENTS (argv),
+        // never interpolated into the script text. So no user value can alter
+        // the script and there is nothing to escape — the whole AppleScript
+        // injection class is gone by construction, not by careful quoting.
+        // `--` ends osascript's own option parsing, so a recipient starting
+        // with "-" can't be mistaken for a flag.
         let script = """
-            tell application "Messages"
-                set svc to 1st account whose service type = iMessage
-                send "\(safeMessage)" to participant "\(safeRecipient)" of svc
-            end tell
+            on run argv
+                set theRecipient to item 1 of argv
+                set theMessage to item 2 of argv
+                tell application "Messages"
+                    set svc to 1st account whose service type = iMessage
+                    send theMessage to participant theRecipient of svc
+                end tell
+            end run
             """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
+        process.arguments = ["-e", script, "--", recipient, message]
         do {
             try process.run()
         } catch {
             NSLog("MinStats iMessage alert failed to launch osascript: \(error.localizedDescription)")
         }
-    }
-
-    private static func escape(_ text: String) -> String {
-        text.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 }

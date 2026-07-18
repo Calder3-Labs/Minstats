@@ -43,11 +43,22 @@ struct AlertsView: View {
                     .disabled(!monitor.imessageEnabled)
             }
 
-            Section("Discord") {
+            Section {
                 Toggle("Post to a Discord webhook", isOn: $monitor.discordEnabled)
                 TextField("Webhook URL", text: $monitor.discordWebhook)
                     .textFieldStyle(.roundedBorder)
                     .disabled(!monitor.discordEnabled)
+            } header: {
+                Text("Discord")
+            } footer: {
+                // Only flag a non-empty URL that won't be used — an empty field
+                // is just "not configured", not an error.
+                if monitor.discordEnabled, !monitor.discordWebhook.isEmpty,
+                   DiscordNotifier.validated(monitor.discordWebhook) == nil {
+                    Text("Enter a full https:// webhook URL.")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
 
             Section {
@@ -97,6 +108,6 @@ struct AlertsView: View {
 
     private var anyChannelReady: Bool {
         (monitor.imessageEnabled && !monitor.imessageRecipient.isEmpty)
-            || (monitor.discordEnabled && !monitor.discordWebhook.isEmpty)
+            || (monitor.discordEnabled && DiscordNotifier.validated(monitor.discordWebhook) != nil)
     }
 }

@@ -378,6 +378,61 @@ agent records it on that client.
 
 ---
 
+## 11. Fix: hardening the alerts feature (1.6.1)
+
+The alerts feature emails you — via iMessage-to-yourself or a Discord webhook —
+when the Mac runs hot. A review found it *well-contained* (no remote input
+reaches either channel: the message is the local machine name plus a sensor
+number, and the config is local-only), so these are **defense-in-depth**
+hardenings, not live-vulnerability fixes. Two of them are still worth studying.
+
+**a) Eliminate the injection *class*, don't just escape it.** The iMessage path
+runs AppleScript via `osascript`. The old code built the script by
+*interpolating* the recipient and message into the script text and escaping `"`
+and `\`. Escaping is a game you have to win every time; the attacker only has to
+win once. The fix passes the values as **osascript arguments** (`on run argv`),
+so they never touch the script source — there's nothing to escape, and no value
+can alter the program.
+
+```swift
+process.arguments = ["-e", script, "--", recipient, message]
+//                                    ↑ ends osascript's own option parsing, so
+//                                      a recipient starting with "-" is data,
+//                                      not a flag
+```
+
+> Concept — *prefer structural separation of code and data over sanitization.*
+> Parameterized SQL queries, `execve` argument arrays (vs `sh -c`), and this
+> `argv` pattern are all the same idea: the interpreter is told "this is data"
+> out-of-band, so no amount of metacharacters in the data can escape into code.
+> This is strictly stronger than escaping and it's why it's the preferred
+> defense against every injection class. *Verified*: feeding a classic
+> `" of svc` + `tell application "System Events"…` payload as the recipient
+> delivered it as an inert string — no execution.
+
+**b) Refuse cleartext for a credential-bearing signal.** The Discord webhook URL
+was accepted as-typed, including `http://`. An alert reveals the machine name and
+— implicitly — that you're away, so sending it in cleartext is a real leak. The
+fix validates the URL to **HTTPS only** (`DiscordNotifier.validated`), which
+doubles as the enable-condition for the "Send Test" button, so a bad URL is
+visibly rejected in the UI rather than silently failing.
+
+> Concept — *validate at the trust boundary, and let one validator drive both
+> the action and the UI* so "what the app will do" and "what the UI says it'll
+> do" can't diverge.
+
+Two lower-severity notes were left as accepted trades, consistent with the
+threat model (same-user malware is out of scope): the webhook URL and iMessage
+recipient live in plaintext `UserDefaults` (a bearer credential + PII, but no
+worse than same-user access already grants), and the granted Automation-to-
+Messages TCC permission is a *persistent* capability any code in the process can
+use.
+
+> Files: `AlertMonitor.swift` (`IMessageNotifier`, `DiscordNotifier.validated`),
+> `AlertsView.swift` (UI gate + hint).
+
+---
+
 ## Recurring lessons (the transferable bits)
 
 If you remember nothing else:
@@ -396,6 +451,9 @@ If you remember nothing else:
     **with an invisible migration path.** (§8)
 11. **Sanitize every wire string that reaches a UI or log.** (§10)
 12. **Make the artifact you test be the one that actually runs.** (§9)
+13. **Separate code from data structurally (argv, params) instead of escaping —**
+    **it's the stronger defense against every injection class.** (§11)
+14. **Refuse cleartext for anything sensitive; validate at the boundary.** (§11)
 
 ---
 
