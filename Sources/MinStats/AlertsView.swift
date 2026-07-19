@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Config for temperature alerts: a threshold and the Discord webhook to notify.
-/// Opened from the right-click menu, mirroring the pairing window.
+/// Config for temperature alerts: a threshold and the service to notify
+/// (Discord / Slack / ntfy). Opened from the right-click menu, mirroring the
+/// pairing window.
 struct AlertsView: View {
     @Bindable var monitor: AlertMonitor
     /// For the live current temperature and the °C/°F preference.
@@ -38,19 +39,24 @@ struct AlertsView: View {
             }
 
             Section {
-                TextField("https://discord.com/api/webhooks/…", text: $monitor.discordWebhook)
+                Picker("Service", selection: $monitor.provider) {
+                    ForEach(AlertProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+                .pickerStyle(.segmented)
+                TextField(monitor.provider.fieldPrompt, text: $monitor.endpoint)
                     .textFieldStyle(.roundedBorder)
             } header: {
-                Text("Discord webhook")
+                Text("Send alerts to")
             } footer: {
-                // Flag a non-empty-but-invalid URL; otherwise show where to get one.
-                if !monitor.discordWebhook.isEmpty,
-                   DiscordNotifier.validated(monitor.discordWebhook) == nil {
-                    Text("Enter a full https:// webhook URL.")
+                // Flag a non-empty-but-invalid endpoint; otherwise show setup help.
+                if !monitor.endpoint.isEmpty, monitor.provider.resolve(monitor.endpoint) == nil {
+                    Text(monitor.provider.invalidHint)
                         .font(.caption)
                         .foregroundStyle(.red)
                 } else {
-                    Text("In Discord: Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL.")
+                    Text(monitor.provider.hint)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -69,13 +75,13 @@ struct AlertsView: View {
                         .foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Posts a test message to your webhook and reports whether it actually worked.")
+                Text("Posts a test message to your alert service and reports whether it actually worked.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 380, height: 470)
+        .frame(width: 380, height: 500)
     }
 
     private func sendTest() async {
@@ -115,6 +121,6 @@ struct AlertsView: View {
     }
 
     private var webhookReady: Bool {
-        DiscordNotifier.validated(monitor.discordWebhook) != nil
+        monitor.provider.resolve(monitor.endpoint) != nil
     }
 }
