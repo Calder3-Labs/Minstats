@@ -386,6 +386,13 @@ reaches either channel: the message is the local machine name plus a sensor
 number, and the config is local-only), so these are **defense-in-depth**
 hardenings, not live-vulnerability fixes. Two of them are still worth studying.
 
+> **Update (agent 1.7.1):** the iMessage channel described in (a) was later
+> *removed* — not for a security reason but a reliability one: it failed
+> silently in too many ways outside the app's control (Automation TCC, no
+> iMessage account, no delivery confirmation) while the UI reported success,
+> which is false confidence a safety alert can't have. Discord is now the single
+> channel. The `argv` lesson below still stands on its own merits.
+
 **a) Eliminate the injection *class*, don't just escape it.** The iMessage path
 runs AppleScript via `osascript`. The old code built the script by
 *interpolating* the recipient and message into the script text and escaping `"`

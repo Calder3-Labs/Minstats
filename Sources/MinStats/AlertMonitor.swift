@@ -2,11 +2,17 @@ import Foundation
 import MinStatsProtocol
 
 /// Watches the headline die temperature and fires a notification when it runs
-/// hot — to a channel the *owner* already has (iMessage to yourself, a Discord
-/// webhook). Deliberately no push service: the Mac emits outbound to a channel
-/// you own, so there's no relay to run, no credential to hold, nothing stored
-/// off your machine. Works behind home NAT and without phone pairing, since
-/// it's the Mac reaching out.
+/// hot — to a **Discord webhook** the owner controls. Deliberately no push
+/// service: the Mac emits outbound to a channel you own, so there's no relay to
+/// run, no credential to hold, nothing stored off your machine. Works behind
+/// home NAT and without phone pairing, since it's the Mac reaching out.
+///
+/// Discord is the single channel by design. iMessage was tried and dropped: it
+/// failed silently in too many ways outside the app's control (Automation TCC
+/// denied, no iMessage account, no delivery confirmation) while the UI reported
+/// success — false confidence a safety alert can't have. A plain HTTPS POST has
+/// one well-defined failure mode and returns a real status code, so a bad setup
+/// is caught honestly at test time.
 ///
 /// Independent of the agent: alerts run whenever MinStats does, gated only by
 /// their own `enabled`, so someone who never turns on phone pairing can still
@@ -26,16 +32,9 @@ final class AlertMonitor {
         didSet { UserDefaults.standard.set(thresholdC, forKey: "alertThresholdC") }
     }
 
-    var imessageEnabled: Bool = UserDefaults.standard.bool(forKey: "alertIMessageEnabled") {
-        didSet { UserDefaults.standard.set(imessageEnabled, forKey: "alertIMessageEnabled") }
-    }
-    var imessageRecipient: String = UserDefaults.standard.string(forKey: "alertIMessageRecipient") ?? "" {
-        didSet { UserDefaults.standard.set(imessageRecipient, forKey: "alertIMessageRecipient") }
-    }
-
-    var discordEnabled: Bool = UserDefaults.standard.bool(forKey: "alertDiscordEnabled") {
-        didSet { UserDefaults.standard.set(discordEnabled, forKey: "alertDiscordEnabled") }
-    }
+    /// The Discord webhook URL. A valid one being present is what "a channel is
+    /// configured" means — no separate enable toggle, since it's the sole
+    /// channel and the master `enabled` already gates everything.
     var discordWebhook: String = UserDefaults.standard.string(forKey: "alertDiscordWebhook") ?? "" {
         didSet { UserDefaults.standard.set(discordWebhook, forKey: "alertDiscordWebhook") }
     }
@@ -73,34 +72,38 @@ final class AlertMonitor {
         return "\(Int(value.rounded()))°\(fahrenheit ? "F" : "C")"
     }
 
-    /// Fires a message to every enabled channel. Used by both a real alert and
-    /// the "Send Test" button, so testing exercises the exact delivery path.
+    /// Delivers a real alert. Fire-and-forget so a slow or failed POST never
+    /// blocks sampling (failures are logged); no-op if no valid webhook is set.
+    /// `evaluate` already gated on `enabled`.
     func notify(title: String, body: String) {
-        let message = "\(title) — \(body)"
-        if imessageEnabled, !imessageRecipient.isEmpty {
-            IMessageNotifier.send(to: imessageRecipient, message: message)
-        }
-        if discordEnabled, let url = DiscordNotifier.validated(discordWebhook) {
-            DiscordNotifier.send(webhook: url, message: message)
-        }
+        guard let url = DiscordNotifier.validated(discordWebhook) else { return }
+        DiscordNotifier.sendInBackground(webhook: url, message: "\(title) — \(body)")
     }
 
-    func sendTest(machineName: String) {
-        notify(title: "MinStats test", body: "Alerts from \(machineName) are working.")
+    /// Sends a real test message and reports the ACTUAL outcome — no optimistic
+    /// "Sent." Throws a descriptive `DiscordNotifier.SendError` the settings
+    /// window shows verbatim, so a bad webhook is caught at setup, not during a
+    /// real thermal event.
+    func sendTest(machineName: String) async throws {
+        guard let url = DiscordNotifier.validated(discordWebhook) else {
+            throw DiscordNotifier.SendError.notConfigured
+        }
+        try await DiscordNotifier.send(
+            webhook: url,
+            message: "MinStats test — alerts from \(machineName) are working."
+        )
     }
 
     // MARK: - Remote config (phone)
 
-    /// True when an enabled channel actually has somewhere to send — so the
-    /// phone can warn that alerts are on but would fire into the void. Reuses
-    /// the same https validation the delivery path does.
+    /// True when there's a valid webhook to send to — so the phone can warn
+    /// that alerts are on but would fire into the void.
     var channelsConfigured: Bool {
-        (imessageEnabled && !imessageRecipient.isEmpty)
-            || (discordEnabled && DiscordNotifier.validated(discordWebhook) != nil)
+        DiscordNotifier.validated(discordWebhook) != nil
     }
 
     /// The wire view of the alert config — the temperature options only, never
-    /// the channel secrets (webhook URL / iMessage recipient stay Mac-side).
+    /// the webhook URL (that stays Mac-side).
     func configDTO() -> AlertConfigDTO {
         AlertConfigDTO(enabled: enabled, thresholdC: thresholdC, channelsConfigured: channelsConfigured)
     }
@@ -120,9 +123,30 @@ final class AlertMonitor {
     }
 }
 
-/// Posts to a Discord webhook — a plain outbound POST, no auth to store beyond
-/// the URL. Fire-and-forget; a failed alert logs but never blocks sampling.
+/// Posts to a Discord webhook — a plain HTTPS POST, no credential to store
+/// beyond the URL. One well-defined failure mode (a bad or deleted webhook),
+/// reported honestly with a real HTTP status — which is exactly why it's the
+/// single alert channel.
 enum DiscordNotifier {
+    enum SendError: LocalizedError {
+        case notConfigured
+        case unreachable(String)
+        case rejected(Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .notConfigured:
+                return "Add a Discord webhook URL first."
+            case let .unreachable(detail):
+                return "Couldn't reach Discord — \(detail)"
+            case let .rejected(code) where code == 401 || code == 404:
+                return "Discord rejected the webhook (HTTP \(code)) — check the URL is correct and hasn't been deleted."
+            case let .rejected(code):
+                return "Discord rejected the message (HTTP \(code))."
+            }
+        }
+    }
+
     /// A webhook we're willing to POST to: **HTTPS only**. An alert reveals the
     /// machine name and — implicitly — that you're away, so it must never cross
     /// the network in cleartext. Returns nil for empty, plain-http, or
@@ -136,50 +160,31 @@ enum DiscordNotifier {
         return url
     }
 
-    static func send(webhook: URL, message: String) {
+    /// Awaitable send that reports the real outcome — used by "Send Test", so
+    /// the button can tell the truth instead of guessing.
+    static func send(webhook: URL, message: String) async throws {
         var request = URLRequest(url: webhook)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["content": message])
-        URLSession.shared.dataTask(with: request) { _, response, error in
-            if let error {
-                NSLog("MinStats Discord alert failed: \(error.localizedDescription)")
-            } else if let code = (response as? HTTPURLResponse)?.statusCode, !(200...299).contains(code) {
-                NSLog("MinStats Discord alert rejected: HTTP \(code)")
-            }
-        }.resume()
-    }
-}
-
-/// Sends an iMessage via Messages.app to a recipient (your own number / Apple
-/// ID). Uses the Mac's existing Messages session, so there's no credential —
-/// but it needs Automation permission to control Messages (macOS prompts on
-/// first send; the "Send Test" button is the natural trigger).
-enum IMessageNotifier {
-    static func send(to recipient: String, message: String) {
-        // The recipient and message are passed as osascript ARGUMENTS (argv),
-        // never interpolated into the script text. So no user value can alter
-        // the script and there is nothing to escape — the whole AppleScript
-        // injection class is gone by construction, not by careful quoting.
-        // `--` ends osascript's own option parsing, so a recipient starting
-        // with "-" can't be mistaken for a flag.
-        let script = """
-            on run argv
-                set theRecipient to item 1 of argv
-                set theMessage to item 2 of argv
-                tell application "Messages"
-                    set svc to 1st account whose service type = iMessage
-                    send theMessage to participant theRecipient of svc
-                end tell
-            end run
-            """
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script, "--", recipient, message]
+        let response: URLResponse
         do {
-            try process.run()
+            (_, response) = try await URLSession.shared.data(for: request)
         } catch {
-            NSLog("MinStats iMessage alert failed to launch osascript: \(error.localizedDescription)")
+            throw SendError.unreachable((error as NSError).localizedDescription)
+        }
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200...299).contains(code) else { throw SendError.rejected(code) }
+    }
+
+    /// Fire-and-forget for real alerts — never blocks sampling; logs failures.
+    static func sendInBackground(webhook: URL, message: String) {
+        Task {
+            do {
+                try await send(webhook: webhook, message: message)
+            } catch {
+                NSLog("MinStats Discord alert failed: \(error.localizedDescription)")
+            }
         }
     }
 }

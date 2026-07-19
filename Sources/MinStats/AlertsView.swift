@@ -1,13 +1,14 @@
 import SwiftUI
 
-/// Config for temperature alerts: a threshold and the channels to notify. Opened
-/// from the right-click menu, mirroring the pairing window.
+/// Config for temperature alerts: a threshold and the Discord webhook to notify.
+/// Opened from the right-click menu, mirroring the pairing window.
 struct AlertsView: View {
     @Bindable var monitor: AlertMonitor
     /// For the live current temperature and the °C/°F preference.
     let model: StatsModel
 
     @State private var testNote: String?
+    @State private var sending = false
 
     var body: some View {
         Form {
@@ -36,50 +37,57 @@ struct AlertsView: View {
                 }
             }
 
-            Section("iMessage") {
-                Toggle("Send an iMessage", isOn: $monitor.imessageEnabled)
-                TextField("Your number or Apple ID", text: $monitor.imessageRecipient)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(!monitor.imessageEnabled)
-            }
-
             Section {
-                Toggle("Post to a Discord webhook", isOn: $monitor.discordEnabled)
-                TextField("Webhook URL", text: $monitor.discordWebhook)
+                TextField("https://discord.com/api/webhooks/…", text: $monitor.discordWebhook)
                     .textFieldStyle(.roundedBorder)
-                    .disabled(!monitor.discordEnabled)
             } header: {
-                Text("Discord")
+                Text("Discord webhook")
             } footer: {
-                // Only flag a non-empty URL that won't be used — an empty field
-                // is just "not configured", not an error.
-                if monitor.discordEnabled, !monitor.discordWebhook.isEmpty,
+                // Flag a non-empty-but-invalid URL; otherwise show where to get one.
+                if !monitor.discordWebhook.isEmpty,
                    DiscordNotifier.validated(monitor.discordWebhook) == nil {
                     Text("Enter a full https:// webhook URL.")
                         .font(.caption)
                         .foregroundStyle(.red)
+                } else {
+                    Text("In Discord: Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
             Section {
-                Button("Send Test Notification") {
-                    monitor.sendTest(machineName: SystemInfo.computerName)
-                    testNote = "Sent to the enabled channels — check your phone."
+                Button {
+                    Task { await sendTest() }
+                } label: {
+                    Text(sending ? "Sending…" : "Send Test Notification")
                 }
-                .disabled(!anyChannelReady)
+                .disabled(!webhookReady || sending)
                 if let testNote {
                     Text(testNote)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("The first iMessage asks macOS for permission to control Messages — approve it, then it sends silently.")
+                Text("Posts a test message to your webhook and reports whether it actually worked.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 380, height: 540)
+        .frame(width: 380, height: 470)
+    }
+
+    private func sendTest() async {
+        sending = true
+        testNote = nil
+        do {
+            try await monitor.sendTest(machineName: SystemInfo.computerName)
+            testNote = "Sent — check your Discord channel."
+        } catch {
+            testNote = error.localizedDescription
+        }
+        sending = false
     }
 
     // The slider runs in the *displayed* unit so both the range and the steps
@@ -106,8 +114,7 @@ struct AlertsView: View {
         AlertMonitor.tempString(celsius, fahrenheit: model.useFahrenheit)
     }
 
-    private var anyChannelReady: Bool {
-        (monitor.imessageEnabled && !monitor.imessageRecipient.isEmpty)
-            || (monitor.discordEnabled && DiscordNotifier.validated(monitor.discordWebhook) != nil)
+    private var webhookReady: Bool {
+        DiscordNotifier.validated(monitor.discordWebhook) != nil
     }
 }
