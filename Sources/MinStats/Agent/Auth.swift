@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import MinStatsProtocol
 import Observation
 
 /// Request authentication for the agent.
@@ -80,12 +81,15 @@ final class Auth {
               abs(Date().timeIntervalSince1970 - sent) <= Self.maxSkew
         else { throw Failure.staleTimestamp }
 
-        let signed = Data(Self.signingString(
-            method: method, path: path, timestamp: timestamp, nonce: nonce, body: body
-        ).utf8)
-        // Constant-time comparison.
+        // Constant-time comparison. The signed message comes from the shared
+        // `WireSignature` — the same function the iOS client signs with, so the
+        // two can't drift.
         guard HMAC<SHA256>.isValidAuthenticationCode(
-            provided, authenticating: signed, using: SymmetricKey(data: client.secret)
+            provided,
+            authenticating: WireSignature.requestMessage(
+                method: method, path: path, timestamp: timestamp, nonce: nonce, body: body
+            ),
+            using: SymmetricKey(data: client.secret)
         ) else { throw Failure.badSignature }
 
         // Only burn the nonce once the signature is known good, so an
@@ -103,24 +107,15 @@ final class Auth {
     /// Signs a response body so the phone can verify it came from the paired
     /// Mac and not an impostor on the same network (requests prove the phone
     /// to the Mac; this is the other direction). Signed with the *requesting
-    /// client's* secret and bound to its nonce — unique per request, so a
-    /// captured response can never be replayed for a different one. Must stay
-    /// byte-identical to the verification in `ios/MinStats/StatsClient.swift`.
+    /// client's* secret and bound to its nonce. The signed message comes from
+    /// the shared `WireSignature`, so it can't drift from the phone's check.
     func responseSignature(clientID: String, nonce: String, body: Data) -> String? {
         guard let client = store.client(for: clientID) else { return nil }
-        let bodyHash = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
         let mac = HMAC<SHA256>.authenticationCode(
-            for: Data("RESPONSE\n\(nonce)\n\(bodyHash)".utf8),
+            for: WireSignature.responseMessage(nonce: nonce, body: body),
             using: SymmetricKey(data: client.secret)
         )
         return Data(mac).base64EncodedString()
-    }
-
-    /// The exact bytes both sides sign. Body is included as a hash so large
-    /// payloads don't have to be re-sent through the MAC.
-    static func signingString(method: String, path: String, timestamp: String, nonce: String, body: Data) -> String {
-        let bodyHash = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
-        return "\(method)\n\(path)\n\(timestamp)\n\(nonce)\n\(bodyHash)"
     }
 
     /// Records a nonce, rejecting reuse. Also prunes expired entries so the

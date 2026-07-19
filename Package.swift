@@ -19,5 +19,13 @@ let package = Package(
             name: "MinStats",
             dependencies: ["PrivateIOKit", "MinStatsProtocol"]
         ),
+        // Pins the wire contract shared by the agent and the iOS app. The
+        // signing format is byte-identical-or-401, so a silent break here would
+        // be a total outage across every paying customer — this catches it at
+        // build time.
+        .testTarget(
+            name: "MinStatsProtocolTests",
+            dependencies: ["MinStatsProtocol"]
+        ),
     ]
 )
