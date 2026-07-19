@@ -7,11 +7,39 @@ import Foundation
 /// 0…1 fraction, memory in GB, process memory in bytes. Formatting is the
 /// client's job, so each client owns its own °C/°F preference.
 public enum MinStatsProtocolVersion {
+    /// The wire generation. **Bump ONLY on a breaking change** — a field
+    /// removed/renamed, or its meaning/units changed. *Additive* changes (a new
+    /// optional field, a new endpoint) must NOT bump it: those are handled
+    /// backward-compatibly by optional DTO fields, the `HealthDTO.capabilities`
+    /// list, and graceful handling of a missing endpoint (e.g. the iOS app
+    /// treating a 404 on `/alerts` as "this agent is too old for that feature").
+    ///
+    /// Because it only moves on breaking changes, "agent version != app version"
+    /// means genuinely incompatible, and the *direction* says which side is
+    /// older and needs updating — see `compatibility(agentProtocol:)`. `/health`
+    /// carries this and is the designated handshake: its DTO must stay
+    /// backward-decodable across generations so a client can always read the
+    /// version even when it can't speak the rest of the protocol.
     public static let current = 1
     /// Fixed (not ephemeral) so a client can be added by host:port when
     /// Bonjour isn't available — e.g. over a tailnet.
     public static let defaultPort: UInt16 = 51847
     public static let bonjourType = "_minstats._tcp"
+
+    public enum Compatibility: Equatable {
+        case ok
+        /// The agent speaks a newer generation — update the client.
+        case agentNewer
+        /// The agent speaks an older generation — update the agent.
+        case agentOlder
+    }
+
+    /// Compares an agent's advertised protocol to what this build speaks.
+    public static func compatibility(agentProtocol: Int) -> Compatibility {
+        if agentProtocol > current { return .agentNewer }
+        if agentProtocol < current { return .agentOlder }
+        return .ok
+    }
 }
 
 // MARK: - Identity
