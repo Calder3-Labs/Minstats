@@ -266,8 +266,17 @@ final class StatusBarController: NSObject {
         window.isReleasedWhenClosed = false
         window.center()
         pairingWindow = window
+        bringToFront(window)
+    }
+
+    /// Brings a window reliably to the foreground. This is a menu-bar (accessory)
+    /// app, so plain `NSApp.activate()` often leaves the window *behind* whatever
+    /// app was frontmost — `orderFrontRegardless()` forces it above other apps'
+    /// windows on open, and `makeKeyAndOrderFront` makes it take keyboard input.
+    private func bringToFront(_ window: NSWindow) {
         NSApp.activate()
-        window.makeKeyAndOrderFront(self)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
     }
 
     @objc func showAlerts() {
@@ -278,8 +287,7 @@ final class StatusBarController: NSObject {
         window.isReleasedWhenClosed = false
         window.center()
         alertsWindow = window
-        NSApp.activate()
-        window.makeKeyAndOrderFront(self)
+        bringToFront(window)
     }
 
     /// Opt in/out of the phone-facing agent. Enabling starts the listener;

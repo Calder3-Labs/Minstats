@@ -81,7 +81,10 @@ struct AlertsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 380, height: 500)
+        // Tall enough that the Send Test button AND its result line sit above
+        // the fold — the honest test feedback is the point, so it mustn't hide
+        // below a scroll.
+        .frame(width: 380, height: 580)
     }
 
     private func sendTest() async {
