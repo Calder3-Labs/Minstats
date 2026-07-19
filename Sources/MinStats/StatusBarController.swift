@@ -199,6 +199,15 @@ final class StatusBarController: NSObject {
         launchAtLogin.state = SMAppService.mainApp.status == .enabled ? .on : .off
         let phonePairing = NSMenuItem(title: "Enable Phone Pairing", action: #selector(togglePhonePairing), keyEquivalent: "")
         phonePairing.state = model.phonePairingEnabled ? .on : .off
+        // A state-aware subtitle (macOS 14+) so anyone scanning the menu — the
+        // privacy-conscious especially — sees what this does without toggling
+        // it: off means nothing is on the network; on means a paired phone can
+        // read stats and quit apps.
+        if #available(macOS 14.4, *) {
+            phonePairing.subtitle = model.phonePairingEnabled
+                ? "On — a paired iPhone can view stats & quit apps"
+                : "Off — nothing on this Mac is shared on your network"
+        }
         let alerts = NSMenuItem(title: "Alerts…", action: #selector(showAlerts), keyEquivalent: "")
         for item in [compact, extended, fahrenheit, launchAtLogin, alerts, phonePairing] { item.target = self }
 
@@ -277,15 +286,44 @@ final class StatusBarController: NSObject {
     /// disabling stops it (releasing the port and Bonjour) so the Mac goes back
     /// to exposing nothing on the network.
     @objc private func togglePhonePairing() {
-        model.phonePairingEnabled.toggle()
         if model.phonePairingEnabled {
-            startAgent()
-        } else {
+            // Turning OFF is always safe — no confirmation. Stop the listener and
+            // Bonjour so the Mac goes back to exposing nothing on the network.
+            model.phonePairingEnabled = false
             server?.stop()
             server = nil
             pairingWindow?.close()
             pairingWindow = nil
+        } else {
+            // Turning ON opens a network listener and lets a paired phone quit
+            // your apps — spell that out and require an explicit accept, so no
+            // one enables remote control without understanding what it grants.
+            guard confirmEnablePhonePairing() else { return }
+            model.phonePairingEnabled = true
+            startAgent()
         }
+    }
+
+    /// The "what am I allowing?" gate for phone pairing. Returns true only if the
+    /// owner explicitly accepts.
+    private func confirmEnablePhonePairing() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Enable Phone Pairing?"
+        alert.informativeText = """
+            This starts a listener on your local network so an iPhone you pair can \
+            see this Mac's temperature, CPU, memory, and processes — and quit or \
+            restart your apps.
+
+            Nothing connects until you pair a phone with a one-time code. Quit and \
+            restart commands work only over your private network (home Wi-Fi or \
+            your own VPN), never the public internet. Turn this off anytime to \
+            stop sharing completely.
+            """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Enable")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate()
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     @objc private func useCompactMode() { model.menuBarMode = .compact }
