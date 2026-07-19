@@ -171,7 +171,16 @@ enum AlertProvider: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Placeholder for the endpoint field.
+    /// Short label shown above the endpoint field.
+    var fieldLabel: String {
+        switch self {
+        case .discord: "Discord webhook URL"
+        case .slack: "Slack webhook URL"
+        case .ntfy: "ntfy topic or URL"
+        }
+    }
+
+    /// In-field placeholder (example format) shown when the field is empty.
     var fieldPrompt: String {
         switch self {
         case .discord: "https://discord.com/api/webhooks/…"

@@ -45,8 +45,19 @@ struct AlertsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                TextField(monitor.provider.fieldPrompt, text: $monitor.endpoint)
+                // Label stacked ABOVE a full-width field, not crammed into the
+                // left label column (a long endpoint hint wrapped badly there).
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(monitor.provider.fieldLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField(text: $monitor.endpoint, prompt: Text(monitor.provider.fieldPrompt)) {
+                        EmptyView()
+                    }
+                    .labelsHidden()
                     .textFieldStyle(.roundedBorder)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } header: {
                 Text("Send alerts to")
             } footer: {
