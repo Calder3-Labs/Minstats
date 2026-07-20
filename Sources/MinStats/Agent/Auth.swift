@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import MinStatsProtocol
 import Observation
+import Security
 
 /// Request authentication for the agent.
 ///
@@ -61,6 +62,12 @@ final class Auth {
         // Extra reachable addresses (Tailscale / LAN IP), so pairing captures
         // the remote routes. Absent → the phone works on-LAN only until re-paired.
         if !altHosts.isEmpty { items.append(.init(name: "alt", value: altHosts.joined(separator: ","))) }
+        // The HTTPS port + cert pin: a phone that captures these connects over
+        // TLS and pins the cert. Absent (or an old phone) → plain HTTP on `port`.
+        if let pin = AgentIdentity.tlsPin() {
+            items.append(.init(name: "tlsport", value: String(MinStatsProtocolVersion.defaultTLSPort)))
+            items.append(.init(name: "pin", value: pin))
+        }
         components.queryItems = items
         return components.string ?? ""
     }
@@ -317,5 +324,92 @@ enum AgentIdentity {
     static func legacySecret() -> Data? {
         guard let data = try? Data(contentsOf: legacySecretURL), data.count == 32 else { return nil }
         return data
+    }
+
+    // MARK: - TLS identity (self-signed; the phone pins it)
+
+    /// Container passphrase for the on-disk P12. Not a real secret — the 0600
+    /// file permissions are the protection; the passphrase just satisfies the
+    /// PKCS#12 format.
+    private static let tlsPassphrase = "minstats"
+
+    static var tlsIdentityURL: URL {
+        supportDirectory.appendingPathComponent("agent-tls.p12")
+    }
+
+    /// The self-signed identity backing the HTTPS listener, generated on first
+    /// use. Imported fresh each call (cheap, and called only at startup / when
+    /// showing the pairing link) to avoid a mutable global.
+    static func tlsIdentity() -> SecIdentity? {
+        if !FileManager.default.fileExists(atPath: tlsIdentityURL.path), !generateTLSIdentity() {
+            return nil
+        }
+        guard let data = try? Data(contentsOf: tlsIdentityURL) else { return nil }
+        var items: CFArray?
+        // NB: the P12 MUST use legacy PBE (see generateTLSIdentity) or
+        // SecPKCS12Import crashes trying to extract the key.
+        let status = SecPKCS12Import(
+            data as CFData,
+            [kSecImportExportPassphrase as String: tlsPassphrase] as CFDictionary,
+            &items
+        )
+        guard status == errSecSuccess,
+              let entries = items as? [[String: Any]],
+              let identity = entries.first?[kSecImportItemIdentity as String]
+        else { return nil }
+        return (identity as! SecIdentity)
+    }
+
+    /// The cert pin for the pairing link: SHA-256 of the leaf key's Security-
+    /// framework representation, base64. Computed the SAME way the iOS client
+    /// extracts it (raw key bytes, NOT an openssl SPKI) so the two agree.
+    static func tlsPin() -> String? {
+        guard let identity = tlsIdentity() else { return nil }
+        var certificate: SecCertificate?
+        guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess,
+              let certificate,
+              let key = SecCertificateCopyKey(certificate),
+              let raw = SecKeyCopyExternalRepresentation(key, nil) as Data?
+        else { return nil }
+        return Data(SHA256.hash(data: raw)).base64EncodedString()
+    }
+
+    /// Generates a self-signed RSA cert (10y) and stores it as a 0600 P12. Uses
+    /// the system openssl (LibreSSL, always present — not Homebrew's) with
+    /// legacy PBE, the one combination macOS's SecPKCS12Import imports without
+    /// crashing.
+    private static func generateTLSIdentity() -> Bool {
+        let dir = supportDirectory
+        let keyURL = dir.appendingPathComponent("agent-tls.key.tmp")
+        let certURL = dir.appendingPathComponent("agent-tls.cert.tmp")
+        defer {
+            try? FileManager.default.removeItem(at: keyURL)
+            try? FileManager.default.removeItem(at: certURL)
+        }
+        func openssl(_ args: [String]) -> Bool {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
+            process.arguments = args
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            do { try process.run() } catch { return false }
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        }
+        guard openssl([
+            "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+            "-keyout", keyURL.path, "-out", certURL.path, "-days", "3650",
+            "-subj", "/CN=MinStats Agent",
+            "-addext", "subjectAltName=DNS:minstats.local",
+        ]) else { return false }
+        guard openssl([
+            "pkcs12", "-export", "-inkey", keyURL.path, "-in", certURL.path,
+            "-out", tlsIdentityURL.path, "-passout", "pass:\(tlsPassphrase)", "-name", "MinStats",
+            "-keypbe", "PBE-SHA1-3DES", "-certpbe", "PBE-SHA1-3DES", "-macalg", "sha1",
+        ]) else { return false }
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: tlsIdentityURL.path
+        )
+        return true
     }
 }

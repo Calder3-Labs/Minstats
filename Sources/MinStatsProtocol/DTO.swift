@@ -24,6 +24,10 @@ public enum MinStatsProtocolVersion {
     /// Fixed (not ephemeral) so a client can be added by host:port when
     /// Bonjour isn't available — e.g. over a tailnet.
     public static let defaultPort: UInt16 = 51847
+    /// HTTPS listener port (self-signed + pinned). Additive alongside the plain
+    /// HTTP port: the pairing link carries this port and the cert pin, and a
+    /// client uses it when it has a pin; older pairings stay on `defaultPort`.
+    public static let defaultTLSPort: UInt16 = 51848
     public static let bonjourType = "_minstats._tcp"
 
     public enum Compatibility: Equatable {

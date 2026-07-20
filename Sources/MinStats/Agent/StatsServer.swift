@@ -1,6 +1,7 @@
 import Foundation
 import MinStatsProtocol
 import Network
+import Security
 import SystemConfiguration
 
 /// The agent: serves MinStats' latest sample to paired clients over the
@@ -23,6 +24,7 @@ final class StatsServer {
     private let alertConfig: @MainActor () -> AlertConfigDTO
     private let setAlertConfig: @MainActor (AlertConfigDTO) -> AlertConfigDTO
     private var listener: NWListener?
+    private var tlsListener: NWListener?
 
     init(
         port: UInt16 = MinStatsProtocolVersion.defaultPort,
@@ -76,11 +78,52 @@ final class StatsServer {
         }
         listener.start(queue: Self.queue)
         self.listener = listener
+
+        // Additive HTTPS listener: same routes over TLS, pinned by the phone.
+        // HTTP stays up (discovery + existing pairings), so nothing breaks. No
+        // Bonjour here — the pairing link carries the TLS port + pin.
+        startTLSListener()
+    }
+
+    private func startTLSListener() {
+        guard let identity = AgentIdentity.tlsIdentity(),
+              let secIdentity = sec_identity_create(identity)
+        else {
+            NSLog("MinStats agent: no TLS identity — HTTPS disabled, HTTP only")
+            return
+        }
+        let tls = NWProtocolTLS.Options()
+        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, secIdentity)
+        let params = NWParameters(tls: tls)
+        params.allowLocalEndpointReuse = true
+        guard let tlsPort = NWEndpoint.Port(rawValue: MinStatsProtocolVersion.defaultTLSPort) else { return }
+        do {
+            let tlsListener = try NWListener(using: params, on: tlsPort)
+            tlsListener.newConnectionHandler = { [weak self] connection in
+                self?.accept(connection)
+            }
+            tlsListener.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    NSLog("MinStats agent TLS listening on \(MinStatsProtocolVersion.defaultTLSPort)")
+                case let .failed(error):
+                    NSLog("MinStats agent TLS failed: \(error.localizedDescription)")
+                default:
+                    break
+                }
+            }
+            tlsListener.start(queue: Self.queue)
+            self.tlsListener = tlsListener
+        } catch {
+            NSLog("MinStats agent TLS listener error: \(error.localizedDescription)")
+        }
     }
 
     func stop() {
         listener?.cancel()
         listener = nil
+        tlsListener?.cancel()
+        tlsListener = nil
     }
 
     // MARK: - Connection handling
@@ -391,5 +434,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "1.8.0"
+    static let agentVersion = "1.9.0"
 }
