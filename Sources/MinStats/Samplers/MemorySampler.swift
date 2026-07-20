@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-struct MemoryStats {
+struct MemoryStats: Sendable {
     let usedGB: Double
     let totalGB: Double
 }

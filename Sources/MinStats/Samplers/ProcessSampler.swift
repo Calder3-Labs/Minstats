@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-struct ProcessEntry: Identifiable {
+struct ProcessEntry: Identifiable, Sendable {
     let name: String
     /// CPU fraction of total machine capacity, or memory bytes,
     /// depending on which ranking this entry came from.
@@ -30,9 +30,17 @@ final class ProcessSampler {
     /// the memory ranking is available immediately.
     func sample(top count: Int = 3) -> (cpu: [ProcessEntry], memory: [ProcessEntry]) {
         let now = mach_absolute_time()
-        var pids = [pid_t](repeating: 0, count: 8192)
-        let listed = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.stride))
-        guard listed > 0 else { return ([], []) }
+        // proc_listallpids returns the number of BYTES written, not a pid count,
+        // and it fills only up to the buffer. A fixed buffer therefore both
+        // truncates silently on a busy Mac and — since the return is bytes —
+        // would slice past the buffer once processes exceed size/4. So probe the
+        // current size, allocate with headroom for churn, and clamp the result.
+        let stride = MemoryLayout<pid_t>.stride
+        let capacity = max(Int(proc_listallpids(nil, 0)) / stride + 128, 4096)
+        var pids = [pid_t](repeating: 0, count: capacity)
+        let bytes = proc_listallpids(&pids, Int32(capacity * stride))
+        guard bytes > 0 else { return ([], []) }
+        let listed = min(Int(bytes) / stride, capacity)
 
         var currentCPUTime: [pid_t: UInt64] = [:]
         var cpuByGroup: [String: Double] = [:]
@@ -45,7 +53,7 @@ final class ProcessSampler {
         let wallNanos = (Double(now - previousSampleTime)) * timebase.numer / timebase.denom
         let hadBaseline = previousSampleTime > 0 && wallNanos > 0
 
-        for pid in pids[0..<Int(listed)] where pid > 0 {
+        for pid in pids[0..<listed] where pid > 0 {
             var info = rusage_info_current()
             let ok = withUnsafeMutablePointer(to: &info) { ptr in
                 ptr.withMemoryRebound(to: (rusage_info_t?).self, capacity: 1) {

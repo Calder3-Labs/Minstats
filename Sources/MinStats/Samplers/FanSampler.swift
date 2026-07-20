@@ -1,7 +1,7 @@
 import IOKit
 import PrivateIOKit
 
-struct FanReading {
+struct FanReading: Sendable {
     let name: String
     let rpm: Double
 }

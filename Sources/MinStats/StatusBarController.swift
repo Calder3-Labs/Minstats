@@ -99,6 +99,9 @@ final class StatusBarController: NSObject {
                     attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)]
                 )
             }
+            // Compact mode is an image with no text, and the padded extended
+            // title reads awkwardly — give VoiceOver a clean spoken summary.
+            button.setAccessibilityLabel(model.voiceOverSummary)
         } onChange: { [weak self] in
             Task { @MainActor in self?.updateTitle() }
         }

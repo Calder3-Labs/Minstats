@@ -66,12 +66,11 @@ final class StatsModel {
         }
     }
 
-    @ObservationIgnored private let temperatureSampler = TemperatureSampler()
-    @ObservationIgnored private let cpuSampler = CPUSampler()
-    @ObservationIgnored private let memorySampler = MemorySampler()
-    @ObservationIgnored private let processSampler = ProcessSampler()
-    @ObservationIgnored private let fanSampler = FanSampler()
-    /// Temperature alerting (iMessage / Discord). Independent of the agent; the
+    /// Samplers live on a background actor so the per-tick IOKit/libproc work
+    /// (temperature, fans, CPU, memory, and a syscall per process) never runs on
+    /// the main thread — a busy Mac would otherwise hitch the menu bar.
+    @ObservationIgnored private let sampler = SamplingActor()
+    /// Temperature alerting (Discord/Slack/ntfy). Independent of the agent; the
     /// config window binds to it directly.
     @ObservationIgnored let alerts = AlertMonitor()
     @ObservationIgnored private var loop: Task<Void, Never>?
@@ -82,22 +81,28 @@ final class StatsModel {
 
     private func start() {
         loop?.cancel()
-        loop = Task {
+        loop = Task { [weak self] in
             while !Task.isCancelled {
-                sampleOnce()
-                try? await Task.sleep(for: .seconds(interval))
+                guard let sampler = self?.sampler else { return }
+                // Collect on the background sampling actor, off the main thread.
+                let reading = await sampler.collect()
+                guard let self, !Task.isCancelled else { return }
+                self.apply(reading)
+                try? await Task.sleep(for: .seconds(self.interval))
             }
         }
     }
 
-    private func sampleOnce() {
-        let raw = temperatureSampler.sample()
-        headlineTemp = TemperatureSampler.headline(from: raw)
-        sensors = TemperatureSampler.displaySensors(from: raw)
-        fans = fanSampler.sample()
-        cpuFraction = cpuSampler.sample()
-        memory = memorySampler.sample()
-        (cpuProcessPool, memoryProcessPool) = processSampler.sample(top: 10)
+    /// Publishes a background sample onto the main-actor @Observable state that
+    /// SwiftUI and the menu bar read, then evaluates alerts.
+    private func apply(_ reading: SampleSet) {
+        headlineTemp = reading.headlineTemp
+        sensors = reading.sensors
+        fans = reading.fans
+        cpuFraction = reading.cpuFraction
+        memory = reading.memory
+        cpuProcessPool = reading.cpuPool
+        memoryProcessPool = reading.memoryPool
         alerts.evaluate(headlineC: headlineTemp, machineName: SystemInfo.computerName, useFahrenheit: useFahrenheit)
     }
 
@@ -146,9 +151,59 @@ final class StatsModel {
         return "\(pad(temp, to: 3))°  \(pad(cpu, to: 3))%  \(pad(ram, to: 4))G"
     }
 
+    /// A spoken summary for VoiceOver on the menu-bar item. The compact mode is
+    /// a custom-drawn image with no readable text, and the padded extended title
+    /// reads awkwardly, so both get this explicit label instead.
+    var voiceOverSummary: String {
+        var parts = [headlineTemp.map { "\(Int(displayDegrees($0).rounded())) degrees" } ?? "temperature unavailable"]
+        if menuBarMode == .extended {
+            if let cpu = cpuFraction { parts.append("CPU \(Int((cpu * 100).rounded())) percent") }
+            if let memory { parts.append(String(format: "RAM %.1f gigabytes", memory.usedGB)) }
+        }
+        return "MinStats: " + parts.joined(separator: ", ")
+    }
+
     private func pad(_ value: String, to width: Int) -> String {
         value.count >= width
             ? value
             : String(repeating: " ", count: width - value.count) + value
+    }
+}
+
+/// A Sendable snapshot of one sampling pass, handed from the background
+/// `SamplingActor` to the main actor.
+struct SampleSet: Sendable {
+    var headlineTemp: Double?
+    var sensors: [TemperatureSensor]
+    var fans: [FanReading]
+    var cpuFraction: Double?
+    var memory: MemoryStats?
+    var cpuPool: [ProcessEntry]
+    var memoryPool: [ProcessEntry]
+}
+
+/// Owns the samplers and runs them off the main thread. Each sampler holds
+/// mutable state (delta baselines, IOKit handles), but it's only ever touched
+/// here, so actor isolation keeps it safe without any locks. The result is a
+/// value-type `SampleSet` the main actor applies.
+actor SamplingActor {
+    private let temperatureSampler = TemperatureSampler()
+    private let cpuSampler = CPUSampler()
+    private let memorySampler = MemorySampler()
+    private let processSampler = ProcessSampler()
+    private let fanSampler = FanSampler()
+
+    func collect() -> SampleSet {
+        let raw = temperatureSampler.sample()
+        let (cpuPool, memoryPool) = processSampler.sample(top: 10)
+        return SampleSet(
+            headlineTemp: TemperatureSampler.headline(from: raw),
+            sensors: TemperatureSampler.displaySensors(from: raw),
+            fans: fanSampler.sample(),
+            cpuFraction: cpuSampler.sample(),
+            memory: memorySampler.sample(),
+            cpuPool: cpuPool,
+            memoryPool: memoryPool
+        )
     }
 }

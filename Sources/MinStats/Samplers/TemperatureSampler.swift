@@ -1,7 +1,7 @@
 import CoreFoundation
 import PrivateIOKit
 
-struct TemperatureSensor {
+struct TemperatureSensor: Sendable {
     let name: String
     let celsius: Double
 }
