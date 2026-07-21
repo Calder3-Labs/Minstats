@@ -9,6 +9,11 @@ struct ProcessEntry: Identifiable, Sendable {
     /// Every pid folded into this group, so a client can quit the whole
     /// app rather than a single helper.
     let pids: [pid_t]
+    /// Whether every pid in the group runs as this user — i.e. whether the
+    /// deliberately-unprivileged kill/restart control could actually act on
+    /// it. False for root daemons (kernel_task, mds_stores…), whose kill
+    /// would only ever come back `denied`.
+    let owned: Bool
     var id: String { name }
 }
 
@@ -90,9 +95,31 @@ final class ProcessSampler {
         func top3(_ groups: [String: Double]) -> [ProcessEntry] {
             groups.sorted { $0.value > $1.value }
                 .prefix(count)
-                .map { ProcessEntry(name: $0.key, value: $0.value, pids: pidsByGroup[$0.key] ?? []) }
+                .map {
+                    let pids = pidsByGroup[$0.key] ?? []
+                    return ProcessEntry(
+                        name: $0.key, value: $0.value, pids: pids,
+                        owned: Self.owned(pids: pids)
+                    )
+                }
         }
         return (top3(cpuByGroup), top3(memoryByGroup))
+    }
+
+    /// True when every pid in the group runs as this user. Checked only for
+    /// the top-N groups (a handful of syscalls), never the whole table. A pid
+    /// that vanished before the check counts as not-owned — conservative, and
+    /// a kill on it would be refused by the pid-reuse interlock anyway.
+    private static func owned(pids: [pid_t]) -> Bool {
+        let uid = geteuid()
+        for pid in pids {
+            var info = proc_bsdinfo()
+            let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+            guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
+                  info.pbi_uid == uid
+            else { return false }
+        }
+        return true
     }
 
     private func displayName(for pid: pid_t) -> String? {

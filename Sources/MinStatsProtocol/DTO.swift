@@ -156,11 +156,17 @@ public struct ProcessDTO: Codable, Sendable {
     public let name: String
     public let value: Double
     public let pids: [Int32]
+    /// Whether every pid in the group runs as the agent's user — i.e.
+    /// whether the unprivileged kill control could actually act on it.
+    /// Additive (agent 2.1.0): nil from older agents, and clients treat nil
+    /// as "unknown — offer the kill and let the agent refuse honestly".
+    public let owned: Bool?
 
-    public init(name: String, value: Double, pids: [Int32]) {
+    public init(name: String, value: Double, pids: [Int32], owned: Bool? = nil) {
         self.name = name
         self.value = value
         self.pids = pids
+        self.owned = owned
     }
 }
 

@@ -119,8 +119,8 @@ final class StatsModel {
             memory: memory.map { MemoryDTO(usedGB: $0.usedGB, totalGB: $0.totalGB) },
             sensors: sensors.map { SensorDTO(name: $0.name, c: $0.celsius) },
             fans: fans.map { FanDTO(name: $0.name, rpm: $0.rpm) },
-            topCPU: cpuProcessPool.map { ProcessDTO(name: $0.name, value: $0.value, pids: $0.pids) },
-            topMemory: memoryProcessPool.map { ProcessDTO(name: $0.name, value: $0.value, pids: $0.pids) }
+            topCPU: cpuProcessPool.map { ProcessDTO(name: $0.name, value: $0.value, pids: $0.pids, owned: $0.owned) },
+            topMemory: memoryProcessPool.map { ProcessDTO(name: $0.name, value: $0.value, pids: $0.pids, owned: $0.owned) }
         )
     }
 
