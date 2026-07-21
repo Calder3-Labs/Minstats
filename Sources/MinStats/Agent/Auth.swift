@@ -329,14 +329,13 @@ enum AgentIdentity {
     // MARK: - TLS identity (self-signed; the phone pins it)
 
     /// Master switch for the HTTPS/TLS path (listener + pairing-link pin).
-    /// **Off until Developer ID signing lands.** Under ad-hoc signing the TLS
-    /// key's Keychain partition list is bound to the (per-rebuild-varying)
-    /// code identity, so signing the handshake raises a password dialog no
-    /// remote peer can answer — the handshake hangs and HTTPS times out. With
-    /// it off, the agent is plain HTTP + HMAC (as before TLS), which works LAN
-    /// and Tailscale prompt-free. Flip to `true` once code identity is stable.
-    /// See docs/TLS-PLAN.md for the full rationale.
-    static let tlsEnabled = false
+    /// On since builds are Developer ID-signed (2026-07-21): the stable code
+    /// identity is what lets the TLS key's one-time Keychain approval stick
+    /// across rebuilds. Under ad-hoc signing this MUST be false — the
+    /// per-rebuild cdhash makes every handshake raise a password dialog no
+    /// remote peer can answer, so HTTPS hangs and times out. Kept as a
+    /// kill-switch; see docs/TLS-PLAN.md for the history.
+    static let tlsEnabled = true
 
     /// Container passphrase for the on-disk P12. Not a real secret — the 0600
     /// file permissions are the protection; the passphrase just satisfies the

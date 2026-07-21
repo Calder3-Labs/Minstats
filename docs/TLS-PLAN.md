@@ -1,8 +1,12 @@
 # TLS for the MinStats agent — spike results + implementation plan
 
-Status: **steps 1-4 implemented and committed; steps 5-7 DEFERRED until
-Developer ID signing is set up (decided 2026-07-20).** The blocker is a
-Keychain-identity problem under ad-hoc signing, not the network — see below.
+Status: **steps 1-4 LIVE as of 2026-07-21** — builds are Developer ID-signed
+(`Makefile` `SIGN`), `AgentIdentity.tlsEnabled` is on, and the fix is verified:
+two builds with different cdhashes each completed a signed `/stats` over TLS in
+~0.1s with zero Keychain prompts (the ad-hoc failure mode was a prompt/hang per
+handshake — see below, kept as history). Remaining: re-pair phones so pairings
+capture the pin; step 6 (ATS removal, verify on device); step 5 (retire HTTP,
+a later major); step 7 (rotation UX decision).
 
 ## The blocker: the TLS key can't be signed with without a Keychain prompt
 
@@ -42,7 +46,7 @@ for the commercial plan anyway, so TLS completion is sequenced behind it. A
 under ad-hoc signing, but that's fragile dev-only machinery for a problem
 Developer ID retires — not worth it.
 
-**Interim state:** committed 1.9.0 keeps the HTTP listener + the ATS exemption
+**Interim state (historical; resolved 2026-07-21):** committed 1.9.0 kept the HTTP listener + the ATS exemption
 (`NSAllowsArbitraryLoads` in `ios/Info.plist`), so the phone works over LAN and
 Tailscale on plain HTTP with HMAC auth as before. The HTTPS listener + pinning
 are present but effectively dormant (a pinned phone would trip the prompt on the

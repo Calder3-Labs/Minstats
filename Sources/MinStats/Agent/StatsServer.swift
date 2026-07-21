@@ -82,9 +82,8 @@ final class StatsServer {
         // Additive HTTPS listener: same routes over TLS, pinned by the phone.
         // HTTP stays up (discovery + existing pairings), so nothing breaks. No
         // Bonjour here — the pairing link carries the TLS port + pin.
-        // Gated off until Developer ID signing (see AgentIdentity.tlsEnabled):
-        // under ad-hoc signing the listener would raise a Keychain prompt on
-        // every handshake that no remote peer can answer.
+        // Gated by AgentIdentity.tlsEnabled — a kill-switch that also encodes
+        // the "requires stable code identity" constraint (see its comment).
         if AgentIdentity.tlsEnabled { startTLSListener() }
     }
 
@@ -108,9 +107,9 @@ final class StatsServer {
             tlsListener.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    NSLog("MinStats agent TLS listening on \(MinStatsProtocolVersion.defaultTLSPort)")
+                    NSLog("MinStats agent: TLS listening on \(MinStatsProtocolVersion.defaultTLSPort)")
                 case let .failed(error):
-                    NSLog("MinStats agent TLS failed: \(error.localizedDescription)")
+                    NSLog("MinStats agent: TLS failed: \(error.localizedDescription)")
                 default:
                     break
                 }
@@ -437,5 +436,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "1.9.1"
+    static let agentVersion = "1.9.2"
 }

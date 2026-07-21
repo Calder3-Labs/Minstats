@@ -5,6 +5,12 @@ BIN    := .build/release/$(APP)
 # Info.plist is stamped from it so Finder's Get Info can never drift
 # from what the menu and /health report.
 VERSION := $(shell sed -n 's/.*agentVersion = "\(.*\)"/\1/p' Sources/MinStats/Agent/StatsServer.swift)
+# Developer ID for ALL builds, dev included, on purpose: the stable code
+# identity is what lets the TLS key's Keychain approval stick across rebuilds
+# (ad-hoc signing changed the cdhash every build → a password prompt per
+# handshake) and stops local-network TCC re-prompts. Hardened runtime
+# (--options runtime) is required for notarization.
+SIGN := Developer ID Application: Erick Calderon (X5UDV422D8)
 
 build:
 	swift build -c release
@@ -17,7 +23,7 @@ bundle: build
 	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" $(BUNDLE)/Contents/Info.plist
 	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" $(BUNDLE)/Contents/Info.plist
 	cp Support/AppIcon.icns $(BUNDLE)/Contents/Resources/AppIcon.icns
-	codesign --force --sign - $(BUNDLE)
+	codesign --force --options runtime --sign "$(SIGN)" $(BUNDLE)
 
 # Install to /Applications and launch THAT copy: SMAppService's login item
 # resolves to /Applications/MinStats.app, so leaving a stale bundle there
@@ -61,7 +67,7 @@ dmg: universal
 	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" $(BUNDLE)/Contents/Info.plist
 	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" $(BUNDLE)/Contents/Info.plist
 	cp Support/AppIcon.icns $(BUNDLE)/Contents/Resources/AppIcon.icns
-	codesign --force --sign - $(BUNDLE)
+	codesign --force --options runtime --timestamp --sign "$(SIGN)" $(BUNDLE)
 	cp -R $(BUNDLE) dist/dmg/
 	ln -s /Applications dist/dmg/Applications
 	hdiutil create -volname $(APP) -srcfolder dist/dmg -ov -format UDZO dist/$(APP).dmg
