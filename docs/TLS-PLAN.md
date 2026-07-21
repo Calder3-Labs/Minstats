@@ -4,9 +4,19 @@ Status: **steps 1-4 LIVE as of 2026-07-21** — builds are Developer ID-signed
 (`Makefile` `SIGN`), `AgentIdentity.tlsEnabled` is on, and the fix is verified:
 two builds with different cdhashes each completed a signed `/stats` over TLS in
 ~0.1s with zero Keychain prompts (the ad-hoc failure mode was a prompt/hang per
-handshake — see below, kept as history). Remaining: re-pair phones so pairings
-capture the pin; step 6 (ATS removal, verify on device); step 5 (retire HTTP,
-a later major); step 7 (rotation UX decision).
+handshake — see below, kept as history). **Step 6 RESOLVED 2026-07-21: the ATS
+exemption stays, deliberately.** Verified on a real phone over cellular +
+Tailscale: with the exemption removed, iOS fails the pinned handshake with
+-1200 on 100.64/10 routes EVEN AFTER PinningDelegate approves the trust
+("pin match" then -1200 in the app's Connection Log) — ATS's certificate
+policy (the self-signed 10-year cert) is not delegate-overridable, and ATS
+exempts local networks, which is why LAN/.local always worked. Narrower
+scoping is impossible: NSExceptionDomains can't take raw IPs and
+NSAllowsLocalNetworking excludes CGNAT. The one future path to removing the
+exemption: an ATS-compliant cert (≤398-day validity, renewed on a STABLE key
+so the key-based pin survives) — fold into step 7's rotation work if App
+Review ever demands it. Remaining: step 5 (retire HTTP, a later major);
+step 7 (rotation UX decision).
 
 ## The blocker: the TLS key can't be signed with without a Keychain prompt
 
