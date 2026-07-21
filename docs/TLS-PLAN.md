@@ -15,8 +15,11 @@ scoping is impossible: NSExceptionDomains can't take raw IPs and
 NSAllowsLocalNetworking excludes CGNAT. The one future path to removing the
 exemption: an ATS-compliant cert (≤398-day validity, renewed on a STABLE key
 so the key-based pin survives) — fold into step 7's rotation work if App
-Review ever demands it. Remaining: step 5 (retire HTTP, a later major);
-step 7 (rotation UX decision).
+Review ever demands it. **Step 5 DONE (agent 2.0.0, 2026-07-21): the
+plain-HTTP listener is retired** — one HTTPS listener carries the routes AND
+the Bonjour advertisement (discovery is browse-only TXT metadata, so nothing
+needed HTTP). Pre-2.0 pin-less pairings get connection-refused → re-pair.
+Remaining: step 7 (rotation UX decision) only.
 
 ## The blocker: the TLS key can't be signed with without a Keychain prompt
 

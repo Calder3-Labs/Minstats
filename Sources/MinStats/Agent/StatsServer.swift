@@ -13,7 +13,6 @@ import SystemConfiguration
 /// is exactly the privilege the control endpoints need and no more.
 @MainActor
 final class StatsServer {
-    private let port: NWEndpoint.Port
     private let auth: Auth
     private let deviceID: String
     /// Supplies the most recent sample. The server never samples itself —
@@ -24,17 +23,14 @@ final class StatsServer {
     private let alertConfig: @MainActor () -> AlertConfigDTO
     private let setAlertConfig: @MainActor (AlertConfigDTO) -> AlertConfigDTO
     private var listener: NWListener?
-    private var tlsListener: NWListener?
 
     init(
-        port: UInt16 = MinStatsProtocolVersion.defaultPort,
         auth: Auth,
         deviceID: String,
         snapshot: @escaping @MainActor () -> StatsDTO,
         alertConfig: @escaping @MainActor () -> AlertConfigDTO,
         setAlertConfig: @escaping @MainActor (AlertConfigDTO) -> AlertConfigDTO
     ) {
-        self.port = NWEndpoint.Port(rawValue: port) ?? 51847
         self.auth = auth
         self.deviceID = deviceID
         self.snapshot = snapshot
@@ -42,11 +38,29 @@ final class StatsServer {
         self.setAlertConfig = setAlertConfig
     }
 
+    /// TLS-only since 2.0.0 (TLS plan step 5): the plain-HTTP listener is
+    /// retired. One listener serves HTTPS on the TLS port and carries the
+    /// Bonjour advertisement — discovery is browse-only metadata (the phone
+    /// reads the TXT record, it never dials an unpaired Mac), so nothing is
+    /// lost by advertising from here. A pre-2.0 pin-less pairing now gets
+    /// connection-refused, which the phone's offline hint reads as "check
+    /// pairing" — re-pairing (the link carries the pin) is the migration.
     func start() throws {
         guard listener == nil else { return }
-        let params = NWParameters.tcp
+        guard AgentIdentity.tlsEnabled,
+              let identity = AgentIdentity.tlsIdentity(),
+              let secIdentity = sec_identity_create(identity),
+              let tlsPort = NWEndpoint.Port(rawValue: MinStatsProtocolVersion.defaultTLSPort)
+        else {
+            // Loud: with no TLS identity there is no agent at all now.
+            NSLog("MinStats agent: no TLS identity — agent NOT serving")
+            return
+        }
+        let tls = NWProtocolTLS.Options()
+        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, secIdentity)
+        let params = NWParameters(tls: tls)
         params.allowLocalEndpointReuse = true
-        let listener = try NWListener(using: params, on: port)
+        let listener = try NWListener(using: params, on: tlsPort)
 
         // Bonjour advertisement so the phone finds this Mac with no config.
         listener.service = NWListener.Service(
@@ -67,9 +81,9 @@ final class StatsServer {
         listener.stateUpdateHandler = { state in
             switch state {
             case .ready:
-                NSLog("MinStats agent listening on \(MinStatsProtocolVersion.defaultPort)")
+                NSLog("MinStats agent: TLS listening on \(MinStatsProtocolVersion.defaultTLSPort)")
             case let .failed(error):
-                NSLog("MinStats agent failed: \(error.localizedDescription)")
+                NSLog("MinStats agent: TLS failed: \(error.localizedDescription)")
             case let .waiting(error):
                 NSLog("MinStats agent waiting: \(error.localizedDescription)")
             default:
@@ -78,54 +92,11 @@ final class StatsServer {
         }
         listener.start(queue: Self.queue)
         self.listener = listener
-
-        // Additive HTTPS listener: same routes over TLS, pinned by the phone.
-        // HTTP stays up (discovery + existing pairings), so nothing breaks. No
-        // Bonjour here — the pairing link carries the TLS port + pin.
-        // Gated by AgentIdentity.tlsEnabled — a kill-switch that also encodes
-        // the "requires stable code identity" constraint (see its comment).
-        if AgentIdentity.tlsEnabled { startTLSListener() }
-    }
-
-    private func startTLSListener() {
-        guard let identity = AgentIdentity.tlsIdentity(),
-              let secIdentity = sec_identity_create(identity)
-        else {
-            NSLog("MinStats agent: no TLS identity — HTTPS disabled, HTTP only")
-            return
-        }
-        let tls = NWProtocolTLS.Options()
-        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, secIdentity)
-        let params = NWParameters(tls: tls)
-        params.allowLocalEndpointReuse = true
-        guard let tlsPort = NWEndpoint.Port(rawValue: MinStatsProtocolVersion.defaultTLSPort) else { return }
-        do {
-            let tlsListener = try NWListener(using: params, on: tlsPort)
-            tlsListener.newConnectionHandler = { [weak self] connection in
-                self?.accept(connection)
-            }
-            tlsListener.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    NSLog("MinStats agent: TLS listening on \(MinStatsProtocolVersion.defaultTLSPort)")
-                case let .failed(error):
-                    NSLog("MinStats agent: TLS failed: \(error.localizedDescription)")
-                default:
-                    break
-                }
-            }
-            tlsListener.start(queue: Self.queue)
-            self.tlsListener = tlsListener
-        } catch {
-            NSLog("MinStats agent TLS listener error: \(error.localizedDescription)")
-        }
     }
 
     func stop() {
         listener?.cancel()
         listener = nil
-        tlsListener?.cancel()
-        tlsListener = nil
     }
 
     // MARK: - Connection handling
@@ -436,5 +407,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "1.9.2"
+    static let agentVersion = "2.0.0"
 }
