@@ -64,7 +64,7 @@ final class Auth {
         if !altHosts.isEmpty { items.append(.init(name: "alt", value: altHosts.joined(separator: ","))) }
         // The HTTPS port + cert pin: a phone that captures these connects over
         // TLS and pins the cert. Absent (or an old phone) → plain HTTP on `port`.
-        if let pin = AgentIdentity.tlsPin() {
+        if AgentIdentity.tlsEnabled, let pin = AgentIdentity.tlsPin() {
             items.append(.init(name: "tlsport", value: String(MinStatsProtocolVersion.defaultTLSPort)))
             items.append(.init(name: "pin", value: pin))
         }
@@ -327,6 +327,16 @@ enum AgentIdentity {
     }
 
     // MARK: - TLS identity (self-signed; the phone pins it)
+
+    /// Master switch for the HTTPS/TLS path (listener + pairing-link pin).
+    /// **Off until Developer ID signing lands.** Under ad-hoc signing the TLS
+    /// key's Keychain partition list is bound to the (per-rebuild-varying)
+    /// code identity, so signing the handshake raises a password dialog no
+    /// remote peer can answer — the handshake hangs and HTTPS times out. With
+    /// it off, the agent is plain HTTP + HMAC (as before TLS), which works LAN
+    /// and Tailscale prompt-free. Flip to `true` once code identity is stable.
+    /// See docs/TLS-PLAN.md for the full rationale.
+    static let tlsEnabled = false
 
     /// Container passphrase for the on-disk P12. Not a real secret — the 0600
     /// file permissions are the protection; the passphrase just satisfies the

@@ -1,7 +1,61 @@
 # TLS for the MinStats agent — spike results + implementation plan
 
-Status: **spike complete (2026-07-20)**, not yet implemented. This captures what
-a throwaway spike proved so the real build doesn't re-learn it.
+Status: **steps 1-4 implemented and committed; steps 5-7 DEFERRED until
+Developer ID signing is set up (decided 2026-07-20).** The blocker is a
+Keychain-identity problem under ad-hoc signing, not the network — see below.
+
+## The blocker: the TLS key can't be signed with without a Keychain prompt
+
+The HTTPS listener needs a `SecIdentity` to sign the handshake. Its private key
+is imported (`SecPKCS12Import`) into the login Keychain, and macOS gates key
+*use* on two independent things: the trusted-application ACL AND — since 10.12 —
+the **key partition list**, which is bound to **code identity (cdhash)**. This
+app is **ad-hoc signed**, so every `make run` rebuild changes the cdhash, the
+partition list no longer matches, and any signing attempt raises a *"MinStats
+wants to sign using key…"* Keychain password dialog. Over Tailscale (or any
+unattended/remote poll) nobody is at the Mac to click it, so the TLS handshake
+**hangs mid-`SecKeyCreateSignature`** and the connection times out — which
+looked exactly like a network/MTU return-path failure but was not. On LAN it
+"worked" only because someone was at the Mac to approve it for that build.
+
+This is the **same hazard the code already documents for the agent secret**
+(hence that secret lives in a 0600 file, not the Keychain — see the `ClientStore`
+comment in `Auth.swift`). The TLS key can't be a plain file, though: the TLS
+stack requires a `SecIdentity`, which is Keychain-bound on macOS.
+
+**Things that do NOT fix it (tried and rejected 2026-07-20):**
+- An **allow-any ACL** on import (`SecAccessCreate` + nil trusted-app list). It
+  opens the ACL but NOT the partition list, so the ad-hoc app still prompts. A
+  CLI test passed only because import + use in one process shares the partition
+  implicitly — a fresh app launch (different cdhash) does not.
+- A **dedicated keychain** via `SecPKCS12Import(kSecImportExportKeychain:)` —
+  fails at import with -26276 (the legacy-PBE P12 the spike requires won't import
+  into a freshly-created keychain that way).
+
+**What WILL fix it:** Developer ID signing gives a **stable code identity**, so
+one "Always Allow" (or a one-time `set-key-partition-list` with the stable Team
+ID) sticks across all future builds — a one-time authorization, not a per-build
+prompt; and the notarized product never shows it. Developer ID is a prerequisite
+for the commercial plan anyway, so TLS completion is sequenced behind it. A
+`security create-keychain` + `security import -A` + `set-key-partition-list`
+(app-owned keychain with an app-known password) could make it prompt-free even
+under ad-hoc signing, but that's fragile dev-only machinery for a problem
+Developer ID retires — not worth it.
+
+**Interim state:** committed 1.9.0 keeps the HTTP listener + the ATS exemption
+(`NSAllowsArbitraryLoads` in `ios/Info.plist`), so the phone works over LAN and
+Tailscale on plain HTTP with HMAC auth as before. The HTTPS listener + pinning
+are present but effectively dormant (a pinned phone would trip the prompt on the
+Mac). Finish steps 5-6 after Developer ID.
+
+Verification gotchas worth keeping (cost hours this session): a pairing captured
+by a pre-pin iOS build stores a permanent no-pin record (re-pair is the only
+fix; symptom "LAN works, Tailscale unreachable" because ATS exempts local nets
+but blocks cleartext to 100.64/10); Safari cannot smoke-test :51848 — it
+hard-fails the 10-year self-signed cert on system policy (>825-day limit) with
+no tap-through (use `curl -4 -sk` from another Mac); and Mac-side `netstat`
+proves only that a response was WRITTEN (bytes in the send queue), not
+DELIVERED — get the peer's own confirmation before calling a transport verified.
 
 ## Why TLS at all
 
