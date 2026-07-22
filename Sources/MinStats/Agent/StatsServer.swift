@@ -201,20 +201,24 @@ final class StatsServer {
             if let denial = authorize(request) { return denial }
             return signed(handleSetAlerts(request), for: request)
 
-        case ("POST", "/control/kill"), ("POST", "/control/restart"):
+        // /control/restart was REMOVED (2.2.0): on a FileVault Mac a remote
+        // restart halts at the pre-boot unlock screen — agent, Tailscale and
+        // all — converting reachable-but-sick into unreachable-until-
+        // physically-attended; the AppleScript request was also vetoable and
+        // unverifiable, and the path was untested by design. Old phones that
+        // still POST it get the graceful 404 below, per the compat contract.
+        case ("POST", "/control/kill"):
             // Control is refused outright from anything but a private
-            // address — the code-level guarantee that "restart my Mac"
-            // can never be reached from the public internet, regardless of
-            // how the network is configured.
+            // address — the code-level guarantee that a kill can never be
+            // reached from the public internet, regardless of how the
+            // network is configured.
             guard Self.isPrivatePeer(connection) else {
                 return .error("control is restricted to private networks", status: 403)
             }
             if let denial = authorize(request) { return denial }
-            return signed(request.path == "/control/kill"
-                ? handleKill(request)
-                : handleRestart(request), for: request)
+            return signed(handleKill(request), for: request)
 
-        case (_, "/health"), (_, "/stats"), (_, "/alerts"), (_, "/control/kill"), (_, "/control/restart"):
+        case (_, "/health"), (_, "/stats"), (_, "/alerts"), (_, "/control/kill"):
             return .error("method not allowed", status: 405)
 
         default:
@@ -240,16 +244,6 @@ final class StatsServer {
         }
         let results = Control.kill(pids: body.pids, expectedName: body.name, mode: body.mode)
         return .json(KillResponseDTO(results: results))
-    }
-
-    private func handleRestart(_ request: HTTP.Request) -> HTTP.Response {
-        guard let body = try? JSONDecoder().decode(RestartRequestDTO.self, from: request.body),
-              body.confirm
-        else {
-            return .error("restart requires confirm: true", status: 400)
-        }
-        Control.requestRestart()
-        return .json(RestartResponseDTO())
     }
 
     /// Signs a response with the requesting client's secret and nonce,
@@ -279,7 +273,7 @@ final class StatsServer {
     }
 
     private func health() -> HealthDTO {
-        var capabilities = ["stats", "kill", "restart"]
+        var capabilities = ["stats", "kill"]
         if !snapshot().fans.isEmpty { capabilities.append("fans") }
         return HealthDTO(
             protocol: MinStatsProtocolVersion.current,
@@ -407,5 +401,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "2.1.1"
+    static let agentVersion = "2.2.0"
 }

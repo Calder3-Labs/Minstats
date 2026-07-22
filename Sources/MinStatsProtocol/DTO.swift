@@ -61,7 +61,8 @@ public struct HealthDTO: Codable, Sendable {
     public let name: String
     public let model: String
     public let agent: String
-    /// e.g. ["stats", "kill", "restart"] — omits "fans" on fanless Macs.
+    /// e.g. ["stats", "kill"] — omits "fans" on fanless Macs. ("restart"
+    /// disappeared with agent 2.2.0.)
     public let capabilities: [String]
 
     public init(
@@ -261,24 +262,12 @@ public struct KillResponseDTO: Codable, Sendable {
     }
 }
 
-public struct RestartRequestDTO: Codable, Sendable {
-    public let confirm: Bool
-
-    public init(confirm: Bool) {
-        self.confirm = confirm
-    }
-}
-
-/// Restart is a *request*: an unprivileged graceful restart can be vetoed
-/// by any app with unsaved changes, so the agent never claims success —
-/// the client should treat the Mac going offline as the real confirmation.
-public struct RestartResponseDTO: Codable, Sendable {
-    public let status: String
-
-    public init(status: String = "requested") {
-        self.status = status
-    }
-}
+// RestartRequestDTO / RestartResponseDTO were REMOVED with the /control/
+// restart route (agent 2.2.0): a remote restart on a FileVault Mac strands
+// the machine at the pre-boot unlock screen (no agent, no VPN), the
+// AppleScript request was vetoable with no honest success signal, and the
+// path was untested by design. Old clients that still POST the route get a
+// graceful 404 per the compatibility contract.
 
 public struct ErrorDTO: Codable, Sendable {
     public let error: String

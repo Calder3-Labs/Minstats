@@ -6,8 +6,8 @@ import MinStatsProtocol
 /// The control actions the agent can perform on this Mac.
 ///
 /// Everything here runs unprivileged, as the logged-in user — deliberately.
-/// That's enough to quit the user's own apps and ask the system to restart,
-/// and it is NOT enough to touch root-owned processes or force anything. A
+/// That's enough to quit the user's own apps, and it is NOT enough to touch
+/// root-owned processes or force anything. A
 /// privileged helper would close that gap at the cost of a large security
 /// surface on a personal utility; the gap is the better trade, so failures
 /// are reported honestly rather than escalated.
@@ -89,19 +89,4 @@ enum Control {
         return KillResultDTO(pid: pid, status: .terminating)
     }
 
-    /// Asks the system to restart. This is a *request*, not a command: an
-    /// unprivileged restart goes through System Events and any app with
-    /// unsaved changes can veto it. There's no honest way to report success —
-    /// the client should treat the Mac going offline as the confirmation.
-    ///
-    /// (`shutdown -r now` would be authoritative but needs root, which this
-    /// agent deliberately doesn't have.)
-    static func requestRestart() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", "tell application \"System Events\" to restart"]
-        // Fire and forget: the reply must reach the phone before the Mac goes
-        // down, so we never wait on this.
-        try? process.run()
-    }
 }
