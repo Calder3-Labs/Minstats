@@ -51,9 +51,9 @@ final class ProcessSampler {
         var cpuByGroup: [String: Double] = [:]
         var memoryByGroup: [String: Double] = [:]
         var nameCache: [pid_t: String] = [:]
-        // One map shared by both rankings: the CPU pass only sees pids above
-        // its 0.0005 threshold, so a per-ranking map would hand back a
-        // partial pid list and "quit this app" would strand its helpers.
+        // One map shared by both rankings: a pid joins on FIRST name lookup
+        // from either pass, so a per-ranking map could hand back a partial
+        // pid list and "quit this app" would strand its helpers.
         var pidsByGroup: [String: [pid_t]] = [:]
         let wallNanos = (Double(now - previousSampleTime)) * timebase.numer / timebase.denom
         let hadBaseline = previousSampleTime > 0 && wallNanos > 0
@@ -81,9 +81,16 @@ final class ProcessSampler {
 
             let cpuNanos = UInt64((Double(info.ri_user_time + info.ri_system_time)) * timebase.numer / timebase.denom)
             currentCPUTime[pid] = cpuNanos
+            // No minimum threshold: an idle many-core Mac can have NOTHING
+            // above any fixed floor (worse at longer refresh intervals, which
+            // average spikes away), and an empty CPU list reads as a broken
+            // app rather than a quiet machine. Accumulating every positive
+            // delta costs nothing extra — the memory pass above already
+            // resolves names for effectively every pid — and top-N picks the
+            // honest winners either way.
             if hadBaseline, let previous = previousCPUTime[pid], cpuNanos > previous {
                 let fraction = Double(cpuNanos - previous) / wallNanos / coreCount
-                if fraction > 0.0005, let name = cachedName() {
+                if fraction > 0, let name = cachedName() {
                     cpuByGroup[name, default: 0] += fraction
                 }
             }
