@@ -270,10 +270,9 @@ final class StatusBarController: NSObject {
                 // link's pin comes from the new identity.
                 self.clients.revokeAll()
                 AgentIdentity.resetTLSIdentity()
-                if let server = self.server {
-                    server.stop()
-                    try? server.start()
-                }
+                // restart(), not stop()+start(): the port releases
+                // asynchronously and an immediate rebind loses the race.
+                self.server?.restart()
             }
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))

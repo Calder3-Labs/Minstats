@@ -99,6 +99,25 @@ final class StatsServer {
         listener = nil
     }
 
+    /// Stop, then start again only after the old listener has actually
+    /// released the port. NWListener.cancel() is asynchronous — an immediate
+    /// start() races the port release and dies inside a `try?`, leaving no
+    /// listener at all (bit the Revoke All flow 2026-07-23: the phone
+    /// re-paired against a Mac that wasn't listening).
+    func restart() {
+        guard let old = listener else { try? start(); return }
+        listener = nil
+        old.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .cancelled, .failed:
+                Task { @MainActor [weak self] in try? self?.start() }
+            default:
+                break
+            }
+        }
+        old.cancel()
+    }
+
     // MARK: - Connection handling
 
     /// All listener and connection work runs here, off the main thread, so a
@@ -401,5 +420,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "2.2.4"
+    static let agentVersion = "2.2.6"
 }

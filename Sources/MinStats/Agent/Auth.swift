@@ -346,56 +346,50 @@ enum AgentIdentity {
         supportDirectory.appendingPathComponent("agent-tls.p12")
     }
 
+    /// The current identity's pin, cached at import time. NOT a secret (it's
+    /// the same string the pairing QR shows) — it exists so launches can
+    /// recognize their already-imported keychain identity WITHOUT importing
+    /// again. Import-once is the whole keychain-hygiene design: every
+    /// SecPKCS12Import deposits a fresh key copy the keychain renders as yet
+    /// another "MinStats Agent" row, so the only winning move is not to
+    /// import.
+    static var tlsPinURL: URL {
+        supportDirectory.appendingPathComponent("agent-tls.pin")
+    }
+
     /// Deletes the TLS identity so the next `tlsIdentity()` call mints a
     /// fresh key + cert — and therefore a fresh pin. Part of "Revoke all
     /// pairings" ONLY (TLS plan step 7 decision): a full trust reset should
     /// not keep serving a possibly-leaked key, and it's free there because
     /// every pairing is already dead — the new QR carries the new pin.
     /// Per-phone revocation must NEVER do this: the other phones' pins have
-    /// to keep verifying.
+    /// to keep verifying. The keychain leftovers of the old identity are
+    /// evicted (by inspection) when the new one is imported.
     static func resetTLSIdentity() {
         try? FileManager.default.removeItem(at: tlsIdentityURL)
+        try? FileManager.default.removeItem(at: tlsPinURL)
     }
 
-    /// The self-signed identity backing the HTTPS listener, generated on first
-    /// use. Imported fresh each call (cheap, and called only at startup / when
-    /// showing the pairing link) to avoid a mutable global.
+    /// The self-signed identity backing the HTTPS listener, generated on
+    /// first use. **Import-once**: if the login keychain already holds an
+    /// identity whose subject AND key fingerprint match our cached pin, it
+    /// is reused as-is — zero keychain writes on a normal launch, zero on
+    /// showing the pairing window. SecPKCS12Import runs only when the
+    /// keychain has no matching identity (first run, after rotation, or
+    /// after a manual cleanup), because every import deposits another key
+    /// copy that Keychain Access renders as another "My Certificates" row.
     static func tlsIdentity() -> SecIdentity? {
         if !FileManager.default.fileExists(atPath: tlsIdentityURL.path), !generateTLSIdentity() {
             return nil
         }
+        // Fast path: reuse the deposit a previous launch made.
+        if let cached = try? String(contentsOf: tlsPinURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !cached.isEmpty,
+            let existing = keychainIdentity(matchingPin: cached) {
+            return existing
+        }
         guard let data = try? Data(contentsOf: tlsIdentityURL) else { return nil }
-        // SecPKCS12Import ALSO deposits the cert + key into the login
-        // keychain on every call — one copy per launch, forever (12 piled up
-        // in two days of dev before this evict). The p12 FILE is the source
-        // of truth, so clear our previous deposits first; the steady state
-        // is exactly one, and it must stay: the returned SecIdentity leans
-        // on the keychain item, so deleting it under a live listener kills
-        // the handshake (verified 2026-07-22). Two gotchas encoded here:
-        // deletion must go copy-persistent-refs-then-delete-per-ref (a
-        // direct attribute-query SecItemDelete silently no-ops on the
-        // file-based login keychain), and matching is by OUR cert label —
-        // never the key's generic "Imported Private Key", which other apps'
-        // imports share. Deleting the identity takes its key with it.
-        // Eviction NEVER trusts query-side filtering: on the file-based
-        // login keychain, SecItemCopyMatching's attribute filters proved
-        // unreliable (over-matching results took this machine's CODE-SIGNING
-        // identity with them, twice, 2026-07-22). Enumerate everything,
-        // check each item's certificate subject IN CODE, and delete only
-        // exact "MinStats Agent" matches — structurally unable to touch
-        // anything else. Identity first (takes its key), then cert-only
-        // orphans.
-        evictDeposits(kSecClassIdentity) { item in
-            let identity = item as! SecIdentity
-            var cert: SecCertificate?
-            guard SecIdentityCopyCertificate(identity, &cert) == errSecSuccess,
-                  let cert else { return false }
-            return SecCertificateCopySubjectSummary(cert) as String? == "MinStats Agent"
-        }
-        evictDeposits(kSecClassCertificate) { item in
-            let cert = item as! SecCertificate
-            return SecCertificateCopySubjectSummary(cert) as String? == "MinStats Agent"
-        }
         var items: CFArray?
         // NB: the P12 MUST use legacy PBE (see generateTLSIdentity) or
         // SecPKCS12Import crashes trying to extract the key.
@@ -406,15 +400,66 @@ enum AgentIdentity {
         )
         guard status == errSecSuccess,
               let entries = items as? [[String: Any]],
-              let identity = entries.first?[kSecImportItemIdentity as String]
+              let imported = entries.first?[kSecImportItemIdentity as String]
         else { return nil }
-        return (identity as! SecIdentity)
+        let identity = imported as! SecIdentity
+        // Record the pin so every future launch takes the reuse path, and
+        // evict deposits of OTHER MinStats keys (pre-rotation identities).
+        // Same-pin duplicates from the pre-import-once era are left for a
+        // one-time manual cleanup — deleting same-key clones programmatically
+        // cannot distinguish the copy in use.
+        if let pin = pin(forIdentity: identity) {
+            try? pin.write(to: tlsPinURL, atomically: true, encoding: .utf8)
+            evictRotatedDeposits(keepingPin: pin)
+        }
+        return identity
     }
 
-    /// Enumerates ALL items of `cls` and deletes those `isOurs` confirms by
-    /// inspecting the item itself — see the caller for why query-side
-    /// attribute filtering is never trusted here.
-    private static func evictDeposits(_ cls: CFString, isOurs: (CFTypeRef) -> Bool) {
+    /// Finds an existing keychain identity that is provably OURS: subject
+    /// "MinStats Agent" AND key fingerprint equal to `pin`. Every check
+    /// inspects the item itself — query-side attribute filtering is never
+    /// trusted (it over-matched catastrophically on the file-based login
+    /// keychain, 2026-07-22).
+    private static func keychainIdentity(matchingPin wanted: String) -> SecIdentity? {
+        var found: SecIdentity?
+        forEachKeychainItem(kSecClassIdentity) { ref, _ in
+            guard found == nil else { return }
+            let identity = ref as! SecIdentity
+            if pin(forIdentity: identity) == wanted { found = identity }
+        }
+        return found
+    }
+
+    /// After a rotation, the OLD identity's deposits linger in the keychain.
+    /// Delete exactly those: subject "MinStats Agent" but a key fingerprint
+    /// that does NOT match the current pin. Inspection-only, like everything
+    /// else here; certs whose fingerprint matches the pin in use are never
+    /// touched (deleting a live listener's item kills its handshake —
+    /// verified 2026-07-22).
+    private static func evictRotatedDeposits(keepingPin pin: String) {
+        forEachKeychainItem(kSecClassIdentity) { ref, persistent in
+            let identity = ref as! SecIdentity
+            guard let itemPin = self.pin(forIdentity: identity), itemPin != pin else { return }
+            var cert: SecCertificate?
+            guard SecIdentityCopyCertificate(identity, &cert) == errSecSuccess, let cert,
+                  SecCertificateCopySubjectSummary(cert) as String? == "MinStats Agent"
+            else { return }
+            SecItemDelete([kSecValuePersistentRef as String: persistent] as CFDictionary)
+        }
+        forEachKeychainItem(kSecClassCertificate) { ref, persistent in
+            let cert = ref as! SecCertificate
+            guard SecCertificateCopySubjectSummary(cert) as String? == "MinStats Agent",
+                  self.pin(forCertificate: cert) != pin
+            else { return }
+            SecItemDelete([kSecValuePersistentRef as String: persistent] as CFDictionary)
+        }
+    }
+
+    /// Enumerates ALL items of `cls`, handing each (ref, persistentRef) to
+    /// the caller for inspection. No attribute filters in the query, ever.
+    private static func forEachKeychainItem(
+        _ cls: CFString, _ body: (CFTypeRef, Data) -> Void
+    ) {
         var all: CFTypeRef?
         let query: [String: Any] = [
             kSecClass as String: cls,
@@ -425,11 +470,25 @@ enum AgentIdentity {
         guard SecItemCopyMatching(query as CFDictionary, &all) == errSecSuccess,
               let items = all as? [[String: Any]] else { return }
         for item in items {
-            guard let ref = item[kSecValueRef as String], isOurs(ref as CFTypeRef),
-                  let persistent = item[kSecValuePersistentRef as String]
+            guard let ref = item[kSecValueRef as String],
+                  let persistent = item[kSecValuePersistentRef as String] as? Data
             else { continue }
-            SecItemDelete([kSecValuePersistentRef as String: persistent] as CFDictionary)
+            body(ref as CFTypeRef, persistent)
         }
+    }
+
+    private static func pin(forIdentity identity: SecIdentity) -> String? {
+        var certificate: SecCertificate?
+        guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess,
+              let certificate else { return nil }
+        return pin(forCertificate: certificate)
+    }
+
+    private static func pin(forCertificate certificate: SecCertificate) -> String? {
+        guard let key = SecCertificateCopyKey(certificate),
+              let raw = SecKeyCopyExternalRepresentation(key, nil) as Data?
+        else { return nil }
+        return Data(SHA256.hash(data: raw)).base64EncodedString()
     }
 
     /// The cert pin for the pairing link: SHA-256 of the leaf key's Security-
@@ -437,13 +496,7 @@ enum AgentIdentity {
     /// extracts it (raw key bytes, NOT an openssl SPKI) so the two agree.
     static func tlsPin() -> String? {
         guard let identity = tlsIdentity() else { return nil }
-        var certificate: SecCertificate?
-        guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess,
-              let certificate,
-              let key = SecCertificateCopyKey(certificate),
-              let raw = SecKeyCopyExternalRepresentation(key, nil) as Data?
-        else { return nil }
-        return Data(SHA256.hash(data: raw)).base64EncodedString()
+        return pin(forIdentity: identity)
     }
 
     /// Generates a self-signed RSA cert (10y) and stores it as a 0600 P12. Uses
