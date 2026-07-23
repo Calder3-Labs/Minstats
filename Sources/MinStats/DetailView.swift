@@ -112,7 +112,7 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(label)
-                    .font(.caption)
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(value)
@@ -134,19 +134,22 @@ struct DetailView: View {
     @ViewBuilder
     private func processList(_ entries: [ProcessEntry], format: @escaping (Double) -> String) -> some View {
         if !entries.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 5) {
                 ForEach(entries) { entry in
                     HStack {
+                        // Same scheme as the sensor rows (secondary name,
+                        // primary value) — these were a step dimmer and a
+                        // step smaller, which read fine on a big external
+                        // display and strained on the MacBook's own.
                         Text(entry.name)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 12)
                         Text(format(entry.value))
-                            .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
-                    .font(.caption)
+                    .font(.callout)
                 }
             }
             .padding(.leading, 10)
@@ -165,25 +168,25 @@ struct DetailView: View {
         // ScrollView's ideal height is near zero — so derive an explicit
         // height from the row count instead of relying on maxHeight.
         let rowCount = max(model.sensors.count + model.fans.count, 1)
-        let contentHeight = CGFloat(rowCount) * 20 + 20
+        let contentHeight = CGFloat(rowCount) * 22 + 20
         return ScrollView {
             VStack(spacing: 7) {
                 if model.sensors.isEmpty {
                     Text("No sensors")
-                        .font(.caption)
+                        .font(.callout)
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity)
                 } else {
                     ForEach(Array(model.sensors.enumerated()), id: \.offset) { _, sensor in
                         HStack {
                             Text(sensor.name)
-                                .font(.caption)
+                                .font(.callout)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer(minLength: 12)
                             Text(String(format: "%.1f°", model.displayDegrees(sensor.celsius)))
-                                .font(.caption)
+                                .font(.callout)
                                 .monospacedDigit()
                         }
                     }
@@ -191,13 +194,13 @@ struct DetailView: View {
                 ForEach(Array(model.fans.enumerated()), id: \.offset) { _, fan in
                     HStack {
                         Text(fan.name)
-                            .font(.caption)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 12)
                         Text("\(Int(fan.rpm)) rpm")
-                            .font(.caption)
+                            .font(.callout)
                             .monospacedDigit()
                     }
                 }
