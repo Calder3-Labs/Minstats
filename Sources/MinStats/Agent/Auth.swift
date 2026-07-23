@@ -299,6 +299,16 @@ enum AgentIdentity {
     private static let idKey = "agentDeviceID"
 
     static var supportDirectory: URL {
+        // Test isolation hook (CI wire-smoke): an overridden support dir gets
+        // its own client store AND its own TLS identity, so a headless
+        // `--serve` imports a fresh key it created itself — same-process
+        // import-and-use never trips the Keychain partition list, unlike
+        // reusing a key a differently-signed process imported.
+        if let override = ProcessInfo.processInfo.environment["MINSTATS_SUPPORT_DIR"] {
+            let dir = URL(fileURLWithPath: override, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MinStats", isDirectory: true)
         try? FileManager.default.createDirectory(

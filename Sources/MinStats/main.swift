@@ -107,7 +107,7 @@ if CommandLine.arguments.contains("--serve") {
     let host = (SystemInfo.computerName)
         .replacingOccurrences(of: " ", with: "-") + ".local"
     let banner = """
-        MinStats agent on port \(MinStatsProtocolVersion.defaultPort)
+        MinStats agent on port \(MinStatsProtocolVersion.defaultTLSPort) (TLS)
         device id: \(deviceID)
         pairing:   \(auth.pairingURL(for: store.unclaimed, host: host, port: MinStatsProtocolVersion.defaultPort, name: SystemInfo.computerName, altHosts: SystemInfo.reachableHosts()))
 
