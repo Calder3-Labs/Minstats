@@ -59,7 +59,8 @@ struct DetailView: View {
                 value: model.cpuFraction.map { "\(Int(($0 * 100).rounded()))%" } ?? "--",
                 fraction: model.cpuFraction
             )
-            processList(model.topCPUProcesses) { "\(Int(($0 * 100).rounded()))%" }
+            // "<1%" floor — mirrors the iOS rows; see DeviceDetailView.
+            processList(model.topCPUProcesses) { $0 < 0.005 ? "<1%" : "\(Int(($0 * 100).rounded()))%" }
             metricRow(
                 label: "Memory",
                 value: model.memory.map { String(format: "%.1f / %.0f GB", $0.usedGB, $0.totalGB) } ?? "--",
