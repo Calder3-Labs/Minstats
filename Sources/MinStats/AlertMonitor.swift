@@ -20,6 +20,17 @@ import MinStatsProtocol
 @MainActor
 @Observable
 final class AlertMonitor {
+    init() {
+        // The removed iMessage channel (1.7.1) left its settings behind in
+        // every install that ever tried it — including a PERSONAL PHONE
+        // NUMBER (alertIMessageRecipient). Dead feature, live PII: purge on
+        // launch so no preferences file keeps carrying it.
+        for stale in ["alertIMessageEnabled", "alertIMessageRecipient",
+                      "alertDiscordEnabled", "alertSlackEnabled"] {
+            UserDefaults.standard.removeObject(forKey: stale)
+        }
+    }
+
     var enabled: Bool = UserDefaults.standard.bool(forKey: "alertsEnabled") {
         didSet { UserDefaults.standard.set(enabled, forKey: "alertsEnabled") }
     }
@@ -293,7 +304,13 @@ enum AlertSender {
             do {
                 try await send(provider: provider, endpoint: endpoint, message: message)
             } catch {
-                NSLog("MinStats alert failed: \(error.localizedDescription)")
+                // Never log localizedDescription here: URLSession errors
+                // often embed the failing URL, and the webhook URL is a
+                // bearer credential that must not end up in the unified log
+                // (which rides along in any sysdiagnose). Provider + error
+                // code diagnose just as well.
+                let code = (error as NSError).code
+                NSLog("MinStats alert failed: \(provider.rawValue) endpoint, error \(code)")
             }
         }
     }

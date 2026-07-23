@@ -24,6 +24,11 @@ struct AlertsView: View {
             Section {
                 HStack {
                     Slider(value: thresholdBinding, in: thresholdRange, step: thresholdStep)
+                        // Grouped macOS forms reserve a label column for a
+                        // Slider even with no label, indenting the control by
+                        // a third of the row — collapse it.
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
                     Text(thresholdLabel)
                         .monospacedDigit()
                         .frame(width: 56, alignment: .trailing)

@@ -85,6 +85,7 @@ final class StatusBarController: NSObject {
             // Compact mode draws the number and a tiny cold→hot bar as one
             // centered image (echoing the panel); extended stays plain text.
             if model.menuBarMode == .compact {
+                statusItem.length = NSStatusItem.variableLength
                 button.attributedTitle = NSAttributedString(string: "")
                 button.image = Self.compactImage(
                     text: model.compactTemperatureText,
@@ -92,11 +93,21 @@ final class StatusBarController: NSObject {
                 )
                 button.imagePosition = .imageOnly
             } else {
+                let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
                 button.image = nil
                 button.imagePosition = .noImage
+                // Fixed item length (sized to the worst-case title) is what
+                // keeps the menu bar from shifting; the title itself is
+                // unpadded so the gaps between temp/CPU/RAM stay even. The
+                // string can't deliver both — padding it evened the width by
+                // making the gaps lopsided.
+                statusItem.length = ceil(
+                    (model.menuTitleTemplate as NSString)
+                        .size(withAttributes: [.font: font]).width
+                ) + 8   // the button's own horizontal insets
                 button.attributedTitle = NSAttributedString(
                     string: model.menuTitle,
-                    attributes: [.font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)]
+                    attributes: [.font: font]
                 )
             }
             // Compact mode is an image with no text, and the padded extended
@@ -225,7 +236,7 @@ final class StatusBarController: NSObject {
         // Pairing only makes sense once the agent is listening, so it appears
         // only when phone pairing is enabled.
         if model.phonePairingEnabled {
-            let pair = NSMenuItem(title: "Pair iPhone…", action: #selector(showPairing), keyEquivalent: "")
+            let pair = NSMenuItem(title: "Pair or Revoke iPhone…", action: #selector(showPairing), keyEquivalent: "")
             pair.target = self
             menu.addItem(pair)
         }
@@ -276,7 +287,7 @@ final class StatusBarController: NSObject {
             }
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
-        window.title = "Pair iPhone"
+        window.title = "Phone Pairing"
         window.styleMask = NSWindow.StyleMask([.titled, .closable])
         window.isReleasedWhenClosed = false
         window.center()

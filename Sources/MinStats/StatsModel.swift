@@ -141,15 +141,24 @@ final class StatsModel {
         useFahrenheit ? celsius * 9 / 5 + 32 : celsius
     }
 
-    /// Fixed-width menu bar title so the item never jitters horizontally.
-    /// Extended: "58°  12%  9.2G"; compact: " 58°"; "--" before first sample.
+    /// Menu bar title with EVEN gaps: "58°  12%  9.2G", no padding. Padding
+    /// each value (the old approach) kept total width constant but dumped
+    /// the blanks into the gap before short values — " 58°   5%" read as
+    /// lopsided. Constant width and even gaps can't both come from the
+    /// string, so evenness lives here and constancy lives in the status
+    /// item's fixed `length` (see `menuTitleTemplate` + StatusBarController).
     var menuTitle: String {
         let temp = headlineTemp.map { String(Int(displayDegrees($0).rounded())) } ?? "--"
-        guard menuBarMode == .extended else { return "\(pad(temp, to: 3))°" }
+        guard menuBarMode == .extended else { return "\(temp)°" }
         let cpu = cpuFraction.map { String(Int(($0 * 100).rounded())) } ?? "--"
         let ram = memory.map { String(format: "%.1f", $0.usedGB) } ?? "--"
-        return "\(pad(temp, to: 3))°  \(pad(cpu, to: 3))%  \(pad(ram, to: 4))G"
+        return "\(temp)°  \(cpu)%  \(ram)G"
     }
+
+    /// Worst-case extended title, used to size the status item's fixed
+    /// length so the menu bar never shifts when digit counts change
+    /// (temp crossing 99→100 °F, CPU hitting 100%, RAM crossing 10 GB).
+    var menuTitleTemplate: String { "888°  888%  88.8G" }
 
     /// A spoken summary for VoiceOver on the menu-bar item. The compact mode is
     /// a custom-drawn image with no readable text, and the padded extended title
@@ -163,11 +172,6 @@ final class StatsModel {
         return "MinStats: " + parts.joined(separator: ", ")
     }
 
-    private func pad(_ value: String, to width: Int) -> String {
-        value.count >= width
-            ? value
-            : String(repeating: " ", count: width - value.count) + value
-    }
 }
 
 /// A Sendable snapshot of one sampling pass, handed from the background
