@@ -59,8 +59,15 @@ struct DetailView: View {
                 value: model.cpuFraction.map { "\(Int(($0 * 100).rounded()))%" } ?? "--",
                 fraction: model.cpuFraction
             )
-            // "<1%" floor — mirrors the iOS rows; see DeviceDetailView.
-            processList(model.topCPUProcesses) { $0 < 0.005 ? "<1%" : "\(Int(($0 * 100).rounded()))%" }
+            // Adaptive precision, mirrored with the iOS rows (see
+            // DeviceDetailView.cpuPercent): integer at 1%+, one decimal
+            // below, "<0.1%" for dust — never a lying "0.0%".
+            processList(model.topCPUProcesses) { value in
+                let percent = value * 100
+                if percent >= 0.95 { return "\(Int(percent.rounded()))%" }
+                if percent >= 0.05 { return String(format: "%.1f%%", percent) }
+                return "<0.1%"
+            }
             metricRow(
                 label: "Memory",
                 value: model.memory.map { String(format: "%.1f / %.0f GB", $0.usedGB, $0.totalGB) } ?? "--",
