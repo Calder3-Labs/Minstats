@@ -346,7 +346,7 @@ final class StatsServer {
 // MARK: - System identity
 
 enum SystemInfo {
-    /// The user-visible computer name ("Example-Air").
+    /// The user-visible computer name ("Living-Room-Mac").
     ///
     /// SCDynamicStore reads it straight from local config with no DNS, and is
     /// the API that actually means "what is this Mac called" —
