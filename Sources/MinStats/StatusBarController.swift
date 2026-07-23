@@ -8,6 +8,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // An LSUIElement app never gets a main menu — but ⌘V/⌘C/⌘X/⌘A/⌘Z
+        // still ROUTE through NSApp.mainMenu's key equivalents, so without
+        // this invisible Edit menu, paste into any text field (the webhook
+        // endpoint, most painfully) only works via right-click.
+        let mainMenu = NSMenu()
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
+
         statusBar = StatusBarController()
         if CommandLine.arguments.contains("--debug-popover") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [statusBar] in
