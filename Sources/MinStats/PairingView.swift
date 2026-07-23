@@ -15,8 +15,14 @@ struct PairingView: View {
     let deviceName: String
     /// Built per slot so the QR refreshes when the offered client changes.
     let pairingURL: (ClientStore.Client) -> String
+    /// The full trust reset (wired by StatusBarController): revokes every
+    /// pairing AND rotates the TLS identity, bouncing the listener onto the
+    /// fresh cert so the next QR carries the new pin. Kept out of this view
+    /// because only the controller owns the server.
+    let onRevokeAll: () -> Void
 
     @State private var copied = false
+    @State private var confirmingRevokeAll = false
 
     var body: some View {
         let client = store.unclaimed
@@ -101,13 +107,26 @@ struct PairingView: View {
             // The "shared this QR with the wrong person" escape hatch: wipes
             // every pairing INCLUDING the offered slot (a photographed QR
             // stays valid until its slot is claimed or discarded, so per-row
-            // revocation alone can't cover a leak).
+            // revocation alone can't cover a leak) AND rotates the TLS
+            // identity — a full reset shouldn't keep a possibly-leaked key.
             Button("Revoke all pairings…", role: .destructive) {
-                store.revokeAll()
-                copied = false
+                confirmingRevokeAll = true
             }
             .controlSize(.small)
             .font(.caption)
+            .confirmationDialog(
+                "Revoke all pairings?",
+                isPresented: $confirmingRevokeAll,
+                titleVisibility: .visible
+            ) {
+                Button("Revoke All", role: .destructive) {
+                    onRevokeAll()
+                    copied = false
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Every paired iPhone stops working and this Mac gets a new identity. Each phone must scan the new code to reconnect.")
+            }
 
             Text("This code grants control of this Mac. Don't share it.")
                 .font(.caption2)

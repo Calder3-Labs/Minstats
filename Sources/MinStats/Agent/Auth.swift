@@ -346,6 +346,17 @@ enum AgentIdentity {
         supportDirectory.appendingPathComponent("agent-tls.p12")
     }
 
+    /// Deletes the TLS identity so the next `tlsIdentity()` call mints a
+    /// fresh key + cert — and therefore a fresh pin. Part of "Revoke all
+    /// pairings" ONLY (TLS plan step 7 decision): a full trust reset should
+    /// not keep serving a possibly-leaked key, and it's free there because
+    /// every pairing is already dead — the new QR carries the new pin.
+    /// Per-phone revocation must NEVER do this: the other phones' pins have
+    /// to keep verifying.
+    static func resetTLSIdentity() {
+        try? FileManager.default.removeItem(at: tlsIdentityURL)
+    }
+
     /// The self-signed identity backing the HTTPS listener, generated on first
     /// use. Imported fresh each call (cheap, and called only at startup / when
     /// showing the pairing link) to avoid a mutable global.

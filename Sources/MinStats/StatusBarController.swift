@@ -261,6 +261,19 @@ final class StatusBarController: NSObject {
                     name: SystemInfo.computerName,
                     altHosts: SystemInfo.reachableHosts()
                 )
+            },
+            onRevokeAll: { [weak self] in
+                guard let self else { return }
+                // Full trust reset (TLS plan step 7): secrets AND identity.
+                // Bounce the listener so it serves the fresh cert — the view
+                // re-derives the QR from the store change, and the pairing
+                // link's pin comes from the new identity.
+                self.clients.revokeAll()
+                AgentIdentity.resetTLSIdentity()
+                if let server = self.server {
+                    server.stop()
+                    try? server.start()
+                }
             }
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))

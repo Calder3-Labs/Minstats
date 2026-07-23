@@ -19,7 +19,17 @@ Review ever demands it. **Step 5 DONE (agent 2.0.0, 2026-07-21): the
 plain-HTTP listener is retired** — one HTTPS listener carries the routes AND
 the Bonjour advertisement (discovery is browse-only TXT metadata, so nothing
 needed HTTP). Pre-2.0 pin-less pairings get connection-refused → re-pair.
-Remaining: step 7 (rotation UX decision) only.
+**Step 7 DECIDED + DONE (agent 2.2.1, 2026-07-22):** rotation rides the
+existing revocation UX, split by blast radius. Per-phone "Revoke" keeps the
+TLS identity (other phones' pins must keep verifying). **"Revoke all
+pairings" is the full trust reset**: wipes every HMAC secret AND rotates the
+TLS identity (`AgentIdentity.resetTLSIdentity()` + listener bounce), so a
+possibly-leaked key dies with the pairings it served — free at that moment,
+since every phone must re-scan anyway and the new QR carries the new pin.
+It's now behind a confirmation dialog that says exactly that. Cert-only
+renewal on a STABLE key (pin survives, phones never notice) is deliberately
+NOT built — it only matters for the ATS-compliant short-validity-cert path,
+and gets built if/when that path is taken. The plan is COMPLETE.
 
 ## The blocker: the TLS key can't be signed with without a Keychain prompt
 
