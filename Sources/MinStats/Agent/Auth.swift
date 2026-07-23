@@ -365,6 +365,37 @@ enum AgentIdentity {
             return nil
         }
         guard let data = try? Data(contentsOf: tlsIdentityURL) else { return nil }
+        // SecPKCS12Import ALSO deposits the cert + key into the login
+        // keychain on every call — one copy per launch, forever (12 piled up
+        // in two days of dev before this evict). The p12 FILE is the source
+        // of truth, so clear our previous deposits first; the steady state
+        // is exactly one, and it must stay: the returned SecIdentity leans
+        // on the keychain item, so deleting it under a live listener kills
+        // the handshake (verified 2026-07-22). Two gotchas encoded here:
+        // deletion must go copy-persistent-refs-then-delete-per-ref (a
+        // direct attribute-query SecItemDelete silently no-ops on the
+        // file-based login keychain), and matching is by OUR cert label —
+        // never the key's generic "Imported Private Key", which other apps'
+        // imports share. Deleting the identity takes its key with it.
+        // Eviction NEVER trusts query-side filtering: on the file-based
+        // login keychain, SecItemCopyMatching's attribute filters proved
+        // unreliable (over-matching results took this machine's CODE-SIGNING
+        // identity with them, twice, 2026-07-22). Enumerate everything,
+        // check each item's certificate subject IN CODE, and delete only
+        // exact "MinStats Agent" matches — structurally unable to touch
+        // anything else. Identity first (takes its key), then cert-only
+        // orphans.
+        evictDeposits(kSecClassIdentity) { item in
+            let identity = item as! SecIdentity
+            var cert: SecCertificate?
+            guard SecIdentityCopyCertificate(identity, &cert) == errSecSuccess,
+                  let cert else { return false }
+            return SecCertificateCopySubjectSummary(cert) as String? == "MinStats Agent"
+        }
+        evictDeposits(kSecClassCertificate) { item in
+            let cert = item as! SecCertificate
+            return SecCertificateCopySubjectSummary(cert) as String? == "MinStats Agent"
+        }
         var items: CFArray?
         // NB: the P12 MUST use legacy PBE (see generateTLSIdentity) or
         // SecPKCS12Import crashes trying to extract the key.
@@ -378,6 +409,27 @@ enum AgentIdentity {
               let identity = entries.first?[kSecImportItemIdentity as String]
         else { return nil }
         return (identity as! SecIdentity)
+    }
+
+    /// Enumerates ALL items of `cls` and deletes those `isOurs` confirms by
+    /// inspecting the item itself — see the caller for why query-side
+    /// attribute filtering is never trusted here.
+    private static func evictDeposits(_ cls: CFString, isOurs: (CFTypeRef) -> Bool) {
+        var all: CFTypeRef?
+        let query: [String: Any] = [
+            kSecClass as String: cls,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnRef as String: true,
+            kSecReturnPersistentRef as String: true,
+        ]
+        guard SecItemCopyMatching(query as CFDictionary, &all) == errSecSuccess,
+              let items = all as? [[String: Any]] else { return }
+        for item in items {
+            guard let ref = item[kSecValueRef as String], isOurs(ref as CFTypeRef),
+                  let persistent = item[kSecValuePersistentRef as String]
+            else { continue }
+            SecItemDelete([kSecValuePersistentRef as String: persistent] as CFDictionary)
+        }
     }
 
     /// The cert pin for the pairing link: SHA-256 of the leaf key's Security-
