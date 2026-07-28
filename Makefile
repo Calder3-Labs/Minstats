@@ -78,4 +78,19 @@ dmg: universal
 clean:
 	rm -rf .build dist
 
-.PHONY: build bundle run print serve icon universal dmg clean
+.PHONY: build bundle run print serve icon universal dmg notarize clean
+
+# Notarize dist/MinStats.dmg for distribution: sign the CONTAINER (the app
+# inside was signed by `dmg`), upload to Apple's notary service, staple the
+# ticket so Gatekeeper verifies offline, then run Gatekeeper's own
+# assessment. One-time setup: `xcrun notarytool store-credentials
+# minstats-notary` with an app-specific password. Stapling must be LAST —
+# any modification after it (re-signing included) invalidates the ticket.
+NOTARY_PROFILE ?= minstats-notary
+
+notarize:
+	@test "$(SIGN)" != "-" || { echo "notarize needs a real Developer ID — set SIGN in Local.mk"; exit 1; }
+	codesign --force --timestamp --sign "$(SIGN)" dist/MinStats.dmg
+	xcrun notarytool submit dist/MinStats.dmg --keychain-profile $(NOTARY_PROFILE) --wait
+	xcrun stapler staple dist/MinStats.dmg
+	spctl -a -t open --context context:primary-signature -v dist/MinStats.dmg
