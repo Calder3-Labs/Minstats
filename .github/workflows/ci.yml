@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  protocol-tests:
+    name: Protocol & auth contract
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift test
+  build:
+    name: Build & bundle (ad-hoc)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: make bundle SIGN=-
+  wire-smoke:
+    name: Agent wire smoke (TLS + HMAC)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift build -c release
+      - run: python3 scripts/wire-smoke.py
