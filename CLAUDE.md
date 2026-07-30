@@ -75,6 +75,19 @@ sources, and the docs), so this repo alone is enough to audit the wire.
     NOTHING crossed the old 0.0005 threshold and the empty CPU list read as
     a broken app; accumulation is threshold-free (costs nothing, the memory
     pass already resolves every name) and top-N surfaces the honest winners.
+    Two more truths, 2026-07-30 (the "19 GB used but tiny process rows"
+    hunt): (3) enumeration is `sysctl KERN_PROC_ALL` (ps's door), NOT
+    proc_listallpids — on macOS 26 (verified 26.5.2, both Macs) the latter
+    silently returns only a newest-first TAIL of the process table (Air:
+    223/894; mini: 164/673; hard pid cutoff, owner-independent), so
+    long-running processes — Finder, login items, a boot-time OrbStack VM
+    holding 12 GB — were never enumerated at all and the lists read "quiet
+    machine"; (4) memory ranking is per-GROUP max(summed phys_footprint,
+    largest single resident set) — footprint alone hid VM guests whose RAM
+    sits in SHARED regions (mini helper: 11.7 GB resident, 665 MB
+    footprint, absent from Activity Monitor too), while per-pid
+    max(footprint, resident) double-counted helpers' shared pages (~3× on
+    Chrome); one process's own resident set can't double-count siblings.
   - `FanSampler` — AppleSMC via IOConnectCallStructMethod. SMCParamStruct layout
     is load-bearing (must be the C-imported 80-byte struct; a Swift-native mirror
     packs to 76 and the kernel rejects it). Decodes flt (Apple Silicon) and fpe2
