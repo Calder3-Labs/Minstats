@@ -62,13 +62,16 @@ struct DetailView: View {
             // Adaptive precision, mirrored with the iOS rows (see
             // DeviceDetailView.cpuPercent): integer at 1%+, one decimal
             // below with the leading zero dropped (".9%" — a column of
-            // "0.x%" repeats "0." to say nothing), "<.1%" for dust — never
-            // a lying "0.0%".
+            // "0.x%" repeats "0." to say nothing), two decimals under 0.1%
+            // (rusage deltas are microsecond-precise, so ".06%" is a real
+            // taper, not a wall of "<.1%"), "<.01%" for dust — never a
+            // lying "0.0%".
             processList(model.topCPUProcesses) { value in
                 let percent = value * 100
                 if percent >= 0.95 { return "\(Int(percent.rounded()))%" }
                 if percent >= 0.05 { return String(String(format: "%.1f%%", percent).dropFirst()) }
-                return "<.1%"
+                if percent >= 0.005 { return String(String(format: "%.2f%%", percent).dropFirst()) }
+                return "<.01%"
             }
             metricRow(
                 label: "Memory",
