@@ -35,17 +35,24 @@ final class ProcessSampler {
     /// the memory ranking is available immediately.
     func sample(top count: Int = 3) -> (cpu: [ProcessEntry], memory: [ProcessEntry]) {
         let now = mach_absolute_time()
-        // proc_listallpids returns the number of BYTES written, not a pid count,
-        // and it fills only up to the buffer. A fixed buffer therefore both
-        // truncates silently on a busy Mac and — since the return is bytes —
-        // would slice past the buffer once processes exceed size/4. So probe the
-        // current size, allocate with headroom for churn, and clamp the result.
-        let stride = MemoryLayout<pid_t>.stride
-        let capacity = max(Int(proc_listallpids(nil, 0)) / stride + 128, 4096)
-        var pids = [pid_t](repeating: 0, count: capacity)
-        let bytes = proc_listallpids(&pids, Int32(capacity * stride))
-        guard bytes > 0 else { return ([], []) }
-        let listed = min(Int(bytes) / stride, capacity)
+        // Enumerate via sysctl KERN_PROC_ALL — the door ps uses — NOT
+        // proc_listallpids. On macOS 26 (verified 26.5.2 on BOTH Macs,
+        // 2026-07-30) proc_listallpids silently returns only a newest-first
+        // TAIL of the process table: Air 223 of 894, mini 164 of 673, cut at
+        // a hard pid threshold regardless of owner. Anything long-running —
+        // Finder, login items, a boot-time OrbStack VM holding 12 GB — was
+        // never enumerated at all, which read as "quiet machine" rather than
+        // a broken sampler. The sysctl door returns the whole table
+        // unprivileged on the same machines.
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return ([], []) }
+        // Headroom: processes spawned between the size probe and the fetch.
+        size += 64 * MemoryLayout<kinfo_proc>.stride
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride)
+        guard sysctl(&mib, 4, &procs, &size, nil, 0) == 0 else { return ([], []) }
+        let listed = size / MemoryLayout<kinfo_proc>.stride
+        let pids = procs[0..<listed].map { $0.kp_proc.p_pid }
 
         var currentCPUTime: [pid_t: UInt64] = [:]
         var cpuByGroup: [String: Double] = [:]
@@ -59,7 +66,7 @@ final class ProcessSampler {
         let wallNanos = (Double(now - previousSampleTime)) * timebase.numer / timebase.denom
         let hadBaseline = previousSampleTime > 0 && wallNanos > 0
 
-        for pid in pids[0..<listed] where pid > 0 {
+        for pid in pids where pid > 0 {
             var info = rusage_info_current()
             let ok = withUnsafeMutablePointer(to: &info) { ptr in
                 ptr.withMemoryRebound(to: (rusage_info_t?).self, capacity: 1) {
