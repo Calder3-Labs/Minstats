@@ -50,6 +50,7 @@ final class ProcessSampler {
         var currentCPUTime: [pid_t: UInt64] = [:]
         var cpuByGroup: [String: Double] = [:]
         var memoryByGroup: [String: Double] = [:]
+        var maxResidentByGroup: [String: Double] = [:]
         var nameCache: [pid_t: String] = [:]
         // One map shared by both rankings: a pid joins on FIRST name lookup
         // from either pass, so a per-ranking map could hand back a partial
@@ -78,6 +79,11 @@ final class ProcessSampler {
             if info.ri_phys_footprint > 0, let name = cachedName() {
                 memoryByGroup[name, default: 0] += Double(info.ri_phys_footprint)
             }
+            // Track the group's single largest resident set alongside the
+            // footprint sum — see the group-level max below.
+            if info.ri_resident_size > 0, let name = cachedName() {
+                maxResidentByGroup[name] = max(maxResidentByGroup[name] ?? 0, Double(info.ri_resident_size))
+            }
 
             let cpuNanos = UInt64((Double(info.ri_user_time + info.ri_system_time)) * timebase.numer / timebase.denom)
             currentCPUTime[pid] = cpuNanos
@@ -98,6 +104,25 @@ final class ProcessSampler {
 
         previousCPUTime = currentCPUTime
         previousSampleTime = now
+
+        // A group's memory is the LARGER of its summed footprint and its
+        // single biggest process's resident set. Footprint (Activity
+        // Monitor's column) is the honest default — it excludes shared
+        // pages, so an app's helpers don't multiply-count what they map in
+        // common (ranking per-pid resident inflated Chrome ~3× here). But
+        // that same exclusion made a long-running OrbStack VM invisible:
+        // its guest RAM lives in SHARED regions (mac-mini, 2026-07-30 —
+        // helper at 11.8 GB resident, 665 MB footprint, absent from this
+        // list while dominating machine-wide used; a freshly booted VM's
+        // memory is anonymous and footprint-counted, which is why the Air
+        // couldn't reproduce it). One process's own resident set can't
+        // double-count its siblings, so the group max surfaces VM-style
+        // processes while ordinary apps — whose helpers' summed footprint
+        // dwarfs any single resident set — keep their Activity Monitor
+        // numbers.
+        for (name, resident) in maxResidentByGroup where resident > memoryByGroup[name] ?? 0 {
+            memoryByGroup[name] = resident
+        }
 
         func top3(_ groups: [String: Double]) -> [ProcessEntry] {
             groups.sorted { $0.value > $1.value }
