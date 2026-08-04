@@ -273,6 +273,9 @@ final class StatusBarController: NSObject {
     }
 
     @objc func showPairing() {
+        // Fresh offer per pairing session: whatever QR the last session
+        // displayed (or someone photographed) is dead from here on.
+        clients.rotateUnclaimed()
         let host = (SystemInfo.computerName)
             .replacingOccurrences(of: " ", with: "-") + ".local"
         // The URL is built per client slot: when a phone claims the offered
