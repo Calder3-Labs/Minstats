@@ -144,6 +144,12 @@ final class Auth {
 /// slot is minted), so pairing two phones back-to-back Just Works and any
 /// one phone can be revoked without touching the others.
 ///
+/// An unclaimed slot is a pairing *offer*, not a standing credential: it
+/// expires `offerTTL` after minting and is rotated every time a pairing
+/// link is displayed. Before 2.2.11 the offered secret lived until claimed
+/// — so a QR glimpsed once (photo, screen share) stayed redeemable forever;
+/// now the exposure window is minutes. Claimed slots never expire.
+///
 /// The file lives on disk rather than in the Keychain, deliberately. The
 /// Keychain ACL is bound to code identity, and this app is ad-hoc signed —
 /// so every rebuild changes its identity and `SecItemCopyMatching` *blocks
@@ -176,6 +182,11 @@ final class ClientStore {
         }
     }
 
+    /// How long a displayed pairing link stays redeemable. Pairing is
+    /// scan → confirm → first poll, normally well under a minute; 5 min
+    /// still covers the copy-link / AirDrop-to-another-room flows.
+    static let offerTTL: TimeInterval = 5 * 60
+
     private(set) var clients: [Client] = []
     private let deviceID: String
 
@@ -199,7 +210,22 @@ final class ClientStore {
     }
 
     func client(for id: String) -> Client? {
-        clients.first { $0.id == id }
+        guard let client = clients.first(where: { $0.id == id }),
+              // Lookup is the enforcement point: an expired offer must not
+              // authenticate even if no mutation has pruned it yet.
+              !Self.expired(client)
+        else { return nil }
+        return client
+    }
+
+    /// Discards the current offer and mints a fresh one. Called whenever a
+    /// pairing link is displayed (window open, `--serve` banner), so the
+    /// previously shown QR is dead by the next pairing session even before
+    /// its TTL lapses.
+    func rotateUnclaimed() {
+        clients.removeAll { $0.claimedAt == nil }
+        ensureUnclaimed()
+        save()
     }
 
     func markClaimed(_ id: String) {
@@ -250,8 +276,17 @@ final class ClientStore {
     }
 
     private func ensureUnclaimed() {
+        // Every mutation flows through here, so expired offers also get
+        // swept from the file — including a pre-TTL install's ancient slot
+        // on first launch after the update.
+        clients.removeAll { Self.expired($0) }
         guard !clients.contains(where: { $0.claimedAt == nil }) else { return }
         clients.append(.fresh())
+    }
+
+    private static func expired(_ client: Client) -> Bool {
+        client.claimedAt == nil
+            && Date().timeIntervalSince1970 - client.createdAt > offerTTL
     }
 
     /// An install that paired before per-phone secrets holds one shared

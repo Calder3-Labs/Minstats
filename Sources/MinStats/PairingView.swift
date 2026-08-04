@@ -106,9 +106,10 @@ struct PairingView: View {
 
             // The "shared this QR with the wrong person" escape hatch: wipes
             // every pairing INCLUDING the offered slot (a photographed QR
-            // stays valid until its slot is claimed or discarded, so per-row
-            // revocation alone can't cover a leak) AND rotates the TLS
-            // identity — a full reset shouldn't keep a possibly-leaked key.
+            // stays redeemable until its TTL — and one claimed by the wrong
+            // phone lives on, so per-row revocation alone can't cover a
+            // leak) AND rotates the TLS identity — a full reset shouldn't
+            // keep a possibly-leaked key.
             Button("Revoke all pairings…", role: .destructive) {
                 confirmingRevokeAll = true
             }
@@ -136,6 +137,18 @@ struct PairingView: View {
         }
         .padding(18)
         .frame(width: 260)
+        // Offers expire (ClientStore.offerTTL): when the slot on screen
+        // reaches its deadline, swap in a fresh one so the window never
+        // shows a dead QR. Re-arms per slot via task(id:); cancelled with
+        // the view, so a closed window rotates nothing (lookup enforces
+        // expiry regardless, and reopening mints fresh anyway).
+        .task(id: client.id) {
+            let remaining = client.createdAt + ClientStore.offerTTL
+                - Date().timeIntervalSince1970
+            try? await Task.sleep(for: .seconds(max(remaining, 0)))
+            guard !Task.isCancelled else { return }
+            store.rotateUnclaimed()
+        }
     }
 
     private static func label(_ claimedAt: Double?) -> String {
