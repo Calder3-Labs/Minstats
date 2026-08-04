@@ -216,7 +216,16 @@ sources, and the docs), so this repo alone is enough to audit the wire.
     `X-MinStats-Key` carries the *client* id and `ClientStore` holds one
     secret per paired phone — the pairing QR offers an unclaimed slot, a
     phone's first verified request claims it (a fresh slot is minted), and
-    the pairing window revokes any one phone alone. The pre-1.5 shared
+    the pairing window revokes any one phone alone. **Offers are ephemeral**
+    (2.2.11): rotated every time a pairing link is displayed (window open,
+    `--serve` banner) and expired `ClientStore.offerTTL` (5 min) after
+    minting — enforced at `client(for:)` lookup, swept on every mutation,
+    and the open window's QR self-refreshes at the deadline. Before this a
+    glimpsed QR stayed redeemable forever. Known residual (deliberate):
+    claiming doesn't swap the secret, so a QR leaked AND claimed within its
+    5-min window rides the legit phone's credential invisibly — fixing that
+    needs a secret-exchange-on-claim protocol step; not worth the moving
+    parts at this threat model. Claimed slots never expire. The pre-1.5 shared
     secret migrates in as a claimed legacy client under the Mac's device id,
     per UserDefaults domain (app and `--serve` have different ids), so
     existing pairings keep working with zero action. Phones self-report a
