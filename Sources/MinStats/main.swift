@@ -106,10 +106,15 @@ if CommandLine.arguments.contains("--serve") {
     }
     let host = (SystemInfo.computerName)
         .replacingOccurrences(of: " ", with: "-") + ".local"
+    // Printing the link is displaying it — same fresh-offer rule as the
+    // pairing window. It expires offerTTL after launch: pair (one signed
+    // request claims the slot for good) within that window, or relaunch.
+    store.rotateUnclaimed()
     let banner = """
         MinStats agent on port \(MinStatsProtocolVersion.defaultTLSPort) (TLS)
         device id: \(deviceID)
         pairing:   \(auth.pairingURL(for: store.unclaimed, host: host, port: MinStatsProtocolVersion.defaultPort, name: SystemInfo.computerName, altHosts: SystemInfo.reachableHosts()))
+                   (expires in \(Int(ClientStore.offerTTL / 60)) min — pair within that window or relaunch)
 
         """
     FileHandle.standardError.write(Data(banner.utf8))
