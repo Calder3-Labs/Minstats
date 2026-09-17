@@ -3,7 +3,7 @@
 A minimalist macOS menu bar system monitor — and a secure companion app to watch (and lightly control) your Macs from your iPhone, from anywhere.
 
 <p align="center">
-  <img src="docs/screenshots/panel.png" alt="MinStats menu bar panel (macOS)" width="300">
+  <img src="docs/screenshots/menubar.png" alt="MinStats in the macOS menu bar with its popover open" width="308">
   &nbsp;&nbsp;
   <img src="docs/screenshots/phone.png" alt="MinStats iOS companion showing the same Mac" width="235">
 </p>
