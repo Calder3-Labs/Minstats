@@ -3,7 +3,9 @@
 A minimalist macOS menu bar system monitor — and a secure companion app to watch (and lightly control) your Macs from your iPhone, from anywhere.
 
 <p align="center">
-  <img src="docs/screenshots/panel.png" alt="MinStats menu bar panel" width="300">
+  <img src="docs/screenshots/panel.png" alt="MinStats menu bar panel (macOS)" width="300">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/phone.png" alt="MinStats iOS companion showing the same Mac" width="235">
 </p>
 
 Most system monitors show you everything. **MinStats shows you the vital few — temperature, CPU, RAM — beautifully**, and nothing you'll never read. It started as a menu bar app because I couldn't find an elegant one. It grew a phone companion because I wanted the same glance after I walked away from the machine.
