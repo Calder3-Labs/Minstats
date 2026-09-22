@@ -317,8 +317,10 @@ final class ClientStore {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(clients) else { return }
-        // createFile applies the permissions at creation, so the secrets are
-        // 0600 from the first byte.
+        // createFile writes a temp file and renames it into place, so a crash
+        // can't leave the store truncated. The temp is briefly umask-default
+        // before the 0600 lands; the 0700 support directory is what keeps
+        // other users out during that window.
         FileManager.default.createFile(
             atPath: Self.fileURL.path, contents: data,
             attributes: [.posixPermissions: 0o600]
@@ -556,6 +558,13 @@ enum AgentIdentity {
             try? FileManager.default.removeItem(at: keyURL)
             try? FileManager.default.removeItem(at: certURL)
         }
+        // Pre-create the temp files 0600: LibreSSL writes -keyout with the
+        // default umask (0644), and truncating an existing file keeps its
+        // mode. NOT the P12 — tlsIdentity() keys generation off its existence,
+        // so an empty one left by a failed openssl would block every retry.
+        for url in [keyURL, certURL] {
+            FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        }
         func openssl(_ args: [String]) -> Bool {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
@@ -576,7 +585,11 @@ enum AgentIdentity {
             "pkcs12", "-export", "-inkey", keyURL.path, "-in", certURL.path,
             "-out", tlsIdentityURL.path, "-passout", "pass:\(tlsPassphrase)", "-name", "MinStats",
             "-keypbe", "PBE-SHA1-3DES", "-certpbe", "PBE-SHA1-3DES", "-macalg", "sha1",
-        ]) else { return false }
+        ]) else {
+            // Don't leave a partial P12 behind — see the pre-create note.
+            try? FileManager.default.removeItem(at: tlsIdentityURL)
+            return false
+        }
         try? FileManager.default.setAttributes(
             [.posixPermissions: 0o600], ofItemAtPath: tlsIdentityURL.path
         )

@@ -26,6 +26,13 @@ enum Control {
         var results: [KillResultDTO] = []
         var live: [pid_t] = []
         for pid in pids {
+            // kill(2) treats pid <= 0 as a process-group broadcast. The name
+            // interlock below already fails for those (proc_pidpath returns
+            // nothing), but that's an accident — refuse them explicitly.
+            guard pid > 0 else {
+                results.append(KillResultDTO(pid: pid, status: .denied, reason: "invalid pid"))
+                continue
+            }
             guard let current = ProcessSampler.displayName(for: pid) else {
                 results.append(KillResultDTO(pid: pid, status: .gone, reason: "process has exited"))
                 continue
