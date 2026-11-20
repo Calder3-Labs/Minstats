@@ -183,6 +183,11 @@ final class StatsServer {
                     let response = self.route(request, from: connection)
                     self.send(response, on: connection)
                 }
+            } else if isComplete {
+                // The peer half-closed with an unparseable request; no more
+                // bytes can arrive. Network.framework would end it on the next
+                // receive anyway (ENODATA), but don't depend on that.
+                connection.cancel()
             } else {
                 self.receive(connection, buffer: buffer)  // need more bytes
             }
@@ -420,5 +425,5 @@ enum SystemInfo {
     /// Bump on any wire-visible or behavioural change. /health reports this so
     /// you can tell which build a Mac is actually running — without it, "did
     /// my update land?" is unanswerable from the network.
-    static let agentVersion = "2.2.12"
+    static let agentVersion = "2.2.13"
 }

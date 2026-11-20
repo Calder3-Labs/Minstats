@@ -346,12 +346,19 @@ enum AgentIdentity {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             return dir
         }
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        var base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MinStats", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: base, withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
+        // Keep the TLS key (agent-tls.p12) and per-phone HMAC secrets
+        // (agent-clients) out of Time Machine and other backups that honor
+        // the flag. Secrets shouldn't travel with a backup; restoring a Mac
+        // means re-pairing its phones, which is the right outcome.
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? base.setResourceValues(values)
         return base
     }
 
